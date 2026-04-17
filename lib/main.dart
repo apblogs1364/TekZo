@@ -9,7 +9,7 @@ import 'package:tekzo/screens/ProfileScreen.dart';
 import 'package:tekzo/screens/WishlistScreen.dart';
 import 'package:tekzo/screens/OrderScreen.dart';
 import 'package:tekzo/screens/AdminDashboardScreen.dart';
-import 'package:tekzo/screens/UserManageScreen.dart';
+import 'package:tekzo/screens/AdminUserManageScreen.dart';
 import 'package:tekzo/observers/navigation_route_observer.dart';
 
 void main() {
@@ -37,7 +37,7 @@ class MyApp extends StatelessWidget {
         '/wishlist': (context) => const WishlistScreen(),
         '/orders': (context) => const OrderScreen(),
         '/admin': (context) => const AdminDashboardScreen(),
-        '/admin/users': (context) => const UserManageScreen(),
+        '/admin/users': (context) => const AdminUserManageScreen(),
       },
     );
   }
