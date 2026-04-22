@@ -1,18 +1,15 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
+import '../services/admin_navigation_index_service.dart';
 
-typedef AdminNavCallback = void Function(int index);
+class AdminBottomNavigationBar extends StatefulWidget {
+  const AdminBottomNavigationBar({Key? key}) : super(key: key);
 
-class AdminBottomNavigationBar extends StatelessWidget {
-  final int currentIndex;
-  final AdminNavCallback onTap;
+  @override
+  State<AdminBottomNavigationBar> createState() => _AdminBottomNavigationBarState();
+}
 
-  const AdminBottomNavigationBar({
-    Key? key,
-    required this.currentIndex,
-    required this.onTap,
-  }) : super(key: key);
-
+class _AdminBottomNavigationBarState extends State<AdminBottomNavigationBar> {
   static const _items = <_NavItem>[
     _NavItem(icon: Icons.dashboard_outlined, label: 'Dash'),
     _NavItem(icon: Icons.inventory_2_outlined, label: 'Items'),
@@ -21,8 +18,46 @@ class AdminBottomNavigationBar extends StatelessWidget {
     _NavItem(icon: Icons.settings_outlined, label: 'Config'),
   ];
 
+  void _onTap(int index) {
+    if (index == AdminNavigationIndexService.currentIndex) return;
+
+    // Determine the target route for the tapped tab
+    String targetRoute;
+    switch (index) {
+      case 0:
+        targetRoute = '/admin';
+        break;
+      case 1:
+        targetRoute = '/admin/products';
+        break;
+      case 2:
+        targetRoute = '/admin/orders';
+        break;
+      case 3:
+        targetRoute = '/admin/users';
+        break;
+      case 4:
+        targetRoute = '/admin/config';
+        break;
+      default:
+        targetRoute = '/admin';
+    }
+
+    // Avoid pushing the same route we're already on
+    final currentRoute = ModalRoute.of(context)?.settings.name;
+    if (currentRoute == targetRoute) return;
+
+    AdminNavigationIndexService.setIndex(index);
+    setState(() {});
+
+    // Use pushNamed (not pushReplacementNamed) so the back stack is preserved.
+    // The user can now press Back to return to the previously opened admin screen.
+    Navigator.pushNamed(context, targetRoute);
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentIndex = AdminNavigationIndexService.currentIndex;
     return Container(
       decoration: BoxDecoration(
         color: AppColors.white,
@@ -36,7 +71,7 @@ class AdminBottomNavigationBar extends StatelessWidget {
           final isSelected = index == currentIndex;
 
           return GestureDetector(
-            onTap: () => onTap(index),
+            onTap: () => _onTap(index),
             behavior: HitTestBehavior.opaque,
             child: Column(
               mainAxisSize: MainAxisSize.min,

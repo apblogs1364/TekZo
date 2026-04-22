@@ -21,7 +21,6 @@ class AdminEditUser extends StatefulWidget {
 }
 
 class _AdminEditUserState extends State<AdminEditUser> {
-  int _selectedIndex = 3; // Users tab selected
   late TextEditingController _nameController;
   late TextEditingController _emailController;
   late TextEditingController _phoneController;
@@ -46,31 +45,6 @@ class _AdminEditUserState extends State<AdminEditUser> {
     _emailController.dispose();
     _phoneController.dispose();
     super.dispose();
-  }
-
-  void _onNavChanged(int index) {
-    if (index == _selectedIndex) return;
-
-    setState(() {
-      _selectedIndex = index;
-    });
-
-    switch (index) {
-      case 0:
-        Navigator.pushReplacementNamed(context, '/admin');
-        break;
-      case 1:
-        Navigator.pushReplacementNamed(context, '/products');
-        break;
-      case 2:
-        Navigator.pushReplacementNamed(context, '/orders');
-        break;
-      case 3:
-        Navigator.pushReplacementNamed(context, '/admin/users');
-        break;
-      case 4:
-        break;
-    }
   }
 
   void _saveChanges() {
@@ -105,10 +79,7 @@ class _AdminEditUserState extends State<AdminEditUser> {
                 child: _buildForm(),
               ),
             ),
-            AdminBottomNavigationBar(
-              currentIndex: _selectedIndex,
-              onTap: _onNavChanged,
-            ),
+            const AdminBottomNavigationBar(),
           ],
         ),
       ),
@@ -129,7 +100,7 @@ class _AdminEditUserState extends State<AdminEditUser> {
               size: 24,
             ),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           const Expanded(
             child: Text(
               'Edit User',

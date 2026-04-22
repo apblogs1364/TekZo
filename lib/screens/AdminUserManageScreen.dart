@@ -11,58 +11,30 @@ class AdminUserManageScreen extends StatefulWidget {
 }
 
 class _AdminUserManageScreenState extends State<AdminUserManageScreen> {
-  int _selectedIndex = 3; // Users tab selected
   final TextEditingController _searchController = TextEditingController();
-
-  void _onNavChanged(int index) {
-    if (index == _selectedIndex) return; // No navigation if same tab
-
-    setState(() {
-      _selectedIndex = index;
-    });
-
-    // Navigate to different screens based on bottom navigation selection
-    switch (index) {
-      case 0: // Dash
-        Navigator.pushReplacementNamed(context, '/admin');
-        break;
-      case 1: // Items
-        Navigator.pushReplacementNamed(context, '/products');
-        break;
-      case 2: // Orders
-        Navigator.pushReplacementNamed(context, '/orders');
-        break;
-      case 3: // Users
-        // Already on users page
-        break;
-      case 4: // Config
-        // Navigate to config page (when created)
-        break;
-    }
-  }
 
   final List<_User> _allUsers = [
     _User(
-      name: 'Alex Rivera',
-      email: 'alex.rivera@tekzo.com',
+      name: 'Aarav Sharma',
+      email: 'aarav.s@tekzo.com',
       role: 'ADMIN',
       isActive: true,
     ),
     _User(
-      name: 'Jordan Smith',
-      email: 'jordan.s@tekzo.com',
+      name: 'Rohan Gupta',
+      email: 'rohan.g@tekzo.com',
       role: 'EDITOR',
       isActive: true,
     ),
     _User(
-      name: 'Sarah Chen',
-      email: 'sarah.c@tekzo.com',
+      name: 'Priya Patel',
+      email: 'priya.p@tekzo.com',
       role: 'CUSTOMER',
       isActive: false,
     ),
     _User(
-      name: 'Marcus Lee',
-      email: 'marcus.lee@tekzo.com',
+      name: 'Vikram Singh',
+      email: 'vikram.s@tekzo.com',
       role: 'ADMIN',
       isActive: true,
     ),
@@ -110,10 +82,7 @@ class _AdminUserManageScreenState extends State<AdminUserManageScreen> {
             _buildHeader(),
             _buildSearchBar(),
             Expanded(child: _buildUserList()),
-            AdminBottomNavigationBar(
-              currentIndex: _selectedIndex,
-              onTap: _onNavChanged,
-            ),
+            const AdminBottomNavigationBar(),
           ],
         ),
       ),

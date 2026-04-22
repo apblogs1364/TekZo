@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
+import 'CheckoutScreen.dart';
 
 /// Shopping cart screen showing selected items and order summary.
 class CartScreen extends StatefulWidget {
@@ -134,7 +135,7 @@ class _CartScreenState extends State<CartScreen> {
                         ),
                       ),
                       Text(
-                        '\$${subtotal.toStringAsFixed(2)}',
+                        '₹${subtotal.toStringAsFixed(2)}',
                         style: const TextStyle(
                           fontSize: 14,
                           fontWeight: FontWeight.w600,
@@ -180,7 +181,7 @@ class _CartScreenState extends State<CartScreen> {
                         ),
                       ),
                       Text(
-                        '\$${total.toStringAsFixed(2)}',
+                        '₹${total.toStringAsFixed(2)}',
                         style: const TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.bold,
@@ -196,10 +197,10 @@ class _CartScreenState extends State<CartScreen> {
                       onPressed: cartItems.isEmpty
                           ? null
                           : () {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Proceeding to checkout...'),
-                                  duration: Duration(seconds: 2),
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => const CheckoutScreen(),
                                 ),
                               );
                             },
@@ -294,7 +295,7 @@ class _CartItemCard extends StatelessWidget {
                 const SizedBox(height: 8),
                 // Price
                 Text(
-                  '\$${item.price.toStringAsFixed(2)}',
+                  '₹${item.price.toStringAsFixed(2)}',
                   style: const TextStyle(
                     fontSize: 13,
                     fontWeight: FontWeight.bold,

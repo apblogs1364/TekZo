@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'package:tekzo/widgets/index.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
+import 'EditProfileScreen.dart';
 
 /// Profile screen showing user info and account management options.
 class ProfileScreen extends StatefulWidget {
@@ -117,7 +118,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   const SizedBox(height: 12),
                                   // User Name
                                   const Text(
-                                    'Julian Vance',
+                                    'Anjali Parmar',
                                     style: TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
@@ -126,7 +127,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   const SizedBox(height: 4),
                                   // User Info
                                   Text(
-                                    'julian.vance@email.com',
+                                    'anjali.p@email.com',
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: AppColors.grey600,
@@ -145,7 +146,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               child: SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton(
-                                  onPressed: () {},
+                                  onPressed: () {
+                                    Navigator.push(context, MaterialPageRoute(builder: (context) => const EditProfileScreen()));
+                                  },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppColors.grey700,
                                     padding: const EdgeInsets.symmetric(

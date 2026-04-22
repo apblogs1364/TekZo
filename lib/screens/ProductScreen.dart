@@ -18,32 +18,32 @@ class _ProductScreenState extends State<ProductScreen> {
   final List<Product> products = [
     Product(
       name: 'MacBook Air M2',
-      price: '\$1,099',
+      price: '₹1,099',
       imagePath: 'assets/images/macbook.jpg',
     ),
     Product(
       name: 'Pro Max 15',
-      price: '\$999',
+      price: '₹999',
       imagePath: 'assets/images/pro_max.jpg',
     ),
     Product(
       name: 'Studio Headphones',
-      price: '\$549',
+      price: '₹549',
       imagePath: 'assets/images/headphones.jpg',
     ),
     Product(
       name: 'Active Watch 4',
-      price: '\$199',
+      price: '₹199',
       imagePath: 'assets/images/watch.jpg',
     ),
     Product(
       name: 'Razer Blade 14',
-      price: '\$1,899',
+      price: '₹1,899',
       imagePath: 'assets/images/razer_blade.jpg',
     ),
     Product(
       name: 'Pad Pro 12.9',
-      price: '\$1,199',
+      price: '₹1,199',
       imagePath: 'assets/images/ipad_pro.jpg',
     ),
   ];

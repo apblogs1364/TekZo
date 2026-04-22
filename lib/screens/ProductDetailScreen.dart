@@ -22,14 +22,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
 
   final List<Review> reviews = [
     Review(
-      name: 'James Miller',
+      name: 'Rahul Sharma',
       rating: 5,
       comment:
           'Excellent sound quality and very comfortable for long sessions.',
       date: '2 weeks ago',
     ),
     Review(
-      name: 'Sarah K.',
+      name: 'Priya P.',
       rating: 4,
       comment:
           'Great product overall. Battery life is impressive and build quality is solid.',
@@ -40,12 +40,12 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
   final List<RelatedProduct> relatedProducts = [
     RelatedProduct(
       name: 'Earbuds Pro',
-      price: '\$199.99',
+      price: '₹199.99',
       imagePath: 'assets/images/earbuds.jpg',
     ),
     RelatedProduct(
       name: 'Studio Monitor',
-      price: '\$299.99',
+      price: '₹299.99',
       imagePath: 'assets/images/monitor.jpg',
     ),
   ];
@@ -156,7 +156,7 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             const Text(
-                              '\$349.00',
+                              '₹349.00',
                               style: TextStyle(
                                 fontSize: 24,
                                 fontWeight: FontWeight.bold,

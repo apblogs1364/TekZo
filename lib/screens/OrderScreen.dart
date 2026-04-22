@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'package:tekzo/widgets/index.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
+import 'OrderDetailScreen.dart';
+import 'ReviewScreen.dart';
 
 /// Order screen displaying active and completed orders with tabs.
 class OrderScreen extends StatefulWidget {
@@ -19,7 +21,7 @@ class _OrderScreenState extends State<OrderScreen> {
       id: 'STKZ-08788',
       productName: 'Leather Backpack',
       imagePath: 'assets/images/backpack.jpg',
-      price: '\$1,299.00',
+      price: '₹1,299.00',
       status: 'PENDING',
       statusColor: AppColors.primary,
       date: 'Oct 20, 2050 • 2 hours',
@@ -28,7 +30,7 @@ class _OrderScreenState extends State<OrderScreen> {
       id: 'STKZ-08092',
       productName: 'Smart Speaker',
       imagePath: 'assets/images/speaker.jpg',
-      price: '\$199.00',
+      price: '₹199.00',
       status: 'PROCESSING',
       statusColor: AppColors.warning,
       date: 'Oct 19, 2050 • 1 hour',
@@ -40,7 +42,7 @@ class _OrderScreenState extends State<OrderScreen> {
       id: 'STKZ-07420',
       productName: 'Wireless Headphones',
       imagePath: 'assets/images/headphones.jpg',
-      price: '\$349.00',
+      price: '₹349.00',
       status: 'DELIVERED',
       statusColor: AppColors.success,
       date: 'Oct 18, 2050 • 3 hours',
@@ -49,7 +51,7 @@ class _OrderScreenState extends State<OrderScreen> {
       id: 'STKZ-07100',
       productName: 'USB-C Cable',
       imagePath: 'assets/images/cable.jpg',
-      price: '\$29.99',
+      price: '₹29.99',
       status: 'DELIVERED',
       statusColor: AppColors.success,
       date: 'Oct 15, 2050 • 1 day',
@@ -333,12 +335,22 @@ class _OrderCard extends StatelessWidget {
               Expanded(
                 child: ElevatedButton(
                   onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Tracking your order...'),
-                        duration: Duration(seconds: 2),
-                      ),
-                    );
+                    if (order.status == 'DELIVERED' || order.status == 'COMPLETED') {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const ReviewScreen(),
+                        ),
+                      );
+                    } else {
+                      // Handle Track Order action
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content: Text('Tracking your order...'),
+                          duration: Duration(seconds: 2),
+                        ),
+                      );
+                    }
                   },
                   style: ElevatedButton.styleFrom(
                     backgroundColor: AppColors.primary,
@@ -347,9 +359,11 @@ class _OrderCard extends StatelessWidget {
                       borderRadius: BorderRadius.circular(8),
                     ),
                   ),
-                  child: const Text(
-                    'Track Order',
-                    style: TextStyle(
+                  child: Text(
+                    (order.status == 'DELIVERED' || order.status == 'COMPLETED') 
+                        ? 'Reviews' 
+                        : 'Track Order',
+                    style: const TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
                       color: AppColors.white,
@@ -361,10 +375,10 @@ class _OrderCard extends StatelessWidget {
               Expanded(
                 child: OutlinedButton(
                   onPressed: () {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      const SnackBar(
-                        content: Text('Viewing order details...'),
-                        duration: Duration(seconds: 2),
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const OrderDetailScreen(),
                       ),
                     );
                   },

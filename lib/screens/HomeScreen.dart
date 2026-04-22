@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'package:tekzo/widgets/index.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
+import 'SettingsScreen.dart';
 
 /// Main home screen with search, categories, featured banner, and navigation.
 class HomeScreen extends StatefulWidget {
@@ -261,7 +262,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: const _ProductCard(
                         imagePath: 'assets/images/sonic_pro_max.png',
                         productName: 'Sonic Pro Max',
-                        price: '\$349',
+                        price: '₹349',
                       ),
                     ),
                     GestureDetector(
@@ -270,7 +271,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: const _ProductCard(
                         imagePath: 'assets/images/macro_watch_v2.png',
                         productName: 'Macro Watch v2',
-                        price: '\$120',
+                        price: '₹120',
                       ),
                     ),
                     GestureDetector(
@@ -279,7 +280,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: const _ProductCard(
                         imagePath: 'assets/images/clarity_pro_mini.png',
                         productName: 'Clarity Pro Mini',
-                        price: '\$89',
+                        price: '₹89',
                       ),
                     ),
                     GestureDetector(
@@ -288,7 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       child: const _ProductCard(
                         imagePath: 'assets/images/ergaflow_mouse.png',
                         productName: 'ErgaFlow Mouse',
-                        price: '\$25',
+                        price: '₹25',
                       ),
                     ),
                   ],
@@ -432,13 +433,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: 'Settings',
                   onTap: () {
                     Navigator.pop(context);
-                  },
-                ),
-                _buildDrawerMenuItem(
-                  icon: Icons.help_outline,
-                  title: 'Help & Support',
-                  onTap: () {
-                    Navigator.pop(context);
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen()));
                   },
                 ),
               ],

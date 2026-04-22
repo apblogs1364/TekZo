@@ -16,19 +16,19 @@ class _WishlistScreenState extends State<WishlistScreen> {
   final List<WishlistItem> wishlistItems = [
     WishlistItem(
       name: 'Sony WH-850000',
-      price: '\$349.00',
+      price: '₹349.00',
       imagePath: 'assets/images/sony_headphones.jpg',
       isFavorite: true,
     ),
     WishlistItem(
       name: 'iPhone 15 Pro',
-      price: '\$999.00',
+      price: '₹999.00',
       imagePath: 'assets/images/iphone_15_pro.jpg',
       isFavorite: true,
     ),
     WishlistItem(
       name: 'Samsung S SmartWatch',
-      price: '\$199.00',
+      price: '₹199.00',
       imagePath: 'assets/images/samsung_watch.jpg',
       isFavorite: true,
     ),
