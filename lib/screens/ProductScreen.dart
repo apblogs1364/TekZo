@@ -182,26 +182,7 @@ class _ProductScreenState extends State<ProductScreen> {
         currentIndex: NavigationIndexService.currentIndex,
         onTap: (index) {
           NavigationIndexService.setIndex(index);
-          setState(() {});
-
-          // Handle navigation
-          switch (index) {
-            case 0:
-              Navigator.pushNamed(context, '/home');
-              break;
-            case 1:
-              // Already on Products
-              break;
-            case 2:
-              Navigator.pushNamed(context, '/wishlist');
-              break;
-            case 3:
-              Navigator.pushNamed(context, '/orders');
-              break;
-            case 4:
-              Navigator.pushNamed(context, '/profile');
-              break;
-          }
+          Navigator.popUntil(context, (route) => route.isFirst);
         },
       ),
     );

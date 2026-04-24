@@ -30,26 +30,7 @@ class NavigationRouteObserver extends RouteObserver<ModalRoute<dynamic>> {
     if (route == null) return;
 
     final name = route.settings.name;
-
-    switch (name) {
-      case '/home':
-        NavigationIndexService.setIndex(NavigationIndexService.HOME);
-        break;
-      case '/products':
-        NavigationIndexService.setIndex(NavigationIndexService.PRODUCTS);
-        break;
-      case '/wishlist':
-        NavigationIndexService.setIndex(NavigationIndexService.WISHLIST);
-        break;
-      case '/orders':
-        NavigationIndexService.setIndex(NavigationIndexService.ORDERS);
-        break;
-      case '/profile':
-        NavigationIndexService.setIndex(NavigationIndexService.PROFILE);
-        break;
-      default:
-        // For routes without a name, default to HOME
-        NavigationIndexService.setIndex(NavigationIndexService.HOME);
-    }
+    final idx = NavigationIndexService.indexForRoute(name);
+    NavigationIndexService.setIndex(idx);
   }
 }

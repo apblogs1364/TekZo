@@ -260,7 +260,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: () =>
                           Navigator.pushNamed(context, '/product-detail'),
                       child: const _ProductCard(
-                        imagePath: 'assets/images/sonic_pro_max.png',
+                        imagePath: 'assets/headphone.jpg',
                         productName: 'Sonic Pro Max',
                         price: '₹349',
                       ),
@@ -269,7 +269,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: () =>
                           Navigator.pushNamed(context, '/product-detail'),
                       child: const _ProductCard(
-                        imagePath: 'assets/images/macro_watch_v2.png',
+                        imagePath: 'assets/headphone.jpg',
                         productName: 'Macro Watch v2',
                         price: '₹120',
                       ),
@@ -278,7 +278,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: () =>
                           Navigator.pushNamed(context, '/product-detail'),
                       child: const _ProductCard(
-                        imagePath: 'assets/images/clarity_pro_mini.png',
+                        imagePath: 'assets/headphone.jpg',
                         productName: 'Clarity Pro Mini',
                         price: '₹89',
                       ),
@@ -287,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       onTap: () =>
                           Navigator.pushNamed(context, '/product-detail'),
                       child: const _ProductCard(
-                        imagePath: 'assets/images/ergaflow_mouse.png',
+                        imagePath: 'assets/headphone.jpg',
                         productName: 'ErgaFlow Mouse',
                         price: '₹25',
                       ),
@@ -304,25 +304,9 @@ class _HomeScreenState extends State<HomeScreen> {
         currentIndex: NavigationIndexService.currentIndex,
         onTap: (index) {
           NavigationIndexService.setIndex(index);
-          setState(() {});
-
-          // Handle navigation
-          switch (index) {
-            case 0:
-              // Already on Home
-              break;
-            case 1:
-              Navigator.pushNamed(context, '/products');
-              break;
-            case 2:
-              Navigator.pushNamed(context, '/wishlist');
-              break;
-            case 3:
-              Navigator.pushNamed(context, '/orders');
-              break;
-            case 4:
-              Navigator.pushNamed(context, '/profile');
-              break;
+          final route = NavigationIndexService.routeForIndex(index);
+          if (ModalRoute.of(context)?.settings.name != route) {
+            Navigator.pushNamed(context, route);
           }
         },
       ),
@@ -433,7 +417,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   title: 'Settings',
                   onTap: () {
                     Navigator.pop(context);
-                    Navigator.push(context, MaterialPageRoute(builder: (context) => const SettingsScreen()));
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const SettingsScreen(),
+                      ),
+                    );
                   },
                 ),
               ],
@@ -640,7 +629,13 @@ class _ProductCard extends StatelessWidget {
               ),
             ),
             child: Center(
-              child: Icon(Icons.image, size: 40, color: AppColors.grey400),
+              child: Image.asset(
+                imagePath,
+                fit: BoxFit.cover,
+                errorBuilder: (context, error, stackTrace) {
+                  return Icon(Icons.image, size: 40, color: AppColors.grey400);
+                },
+              ),
             ),
           ),
           Padding(

@@ -438,7 +438,14 @@ class _ProductDetailScreenState extends State<ProductDetailScreen> {
             // Add to Cart Button
             Expanded(
               child: ElevatedButton(
-                onPressed: () {},
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Sonic Pro Max Headphones added to cart'),
+                      duration: Duration(seconds: 2),
+                    ),
+                  );
+                },
                 style: ElevatedButton.styleFrom(
                   backgroundColor: AppColors.primaryDark,
                   padding: const EdgeInsets.symmetric(vertical: 14),

@@ -85,7 +85,9 @@ class ConfirmOrderScreen extends StatelessWidget {
                       color: AppColors.grey700,
                     ),
                   ),
-                  TextSpan(text: ' has been\nconfirmed and is being processed.'),
+                  TextSpan(
+                    text: ' has been\nconfirmed and is being processed.',
+                  ),
                 ],
               ),
             ),
@@ -143,7 +145,9 @@ class ConfirmOrderScreen extends StatelessWidget {
                             Text(
                               'Estimated Delivery',
                               style: TextStyle(
-                                  fontSize: 12, color: AppColors.grey400),
+                                fontSize: 12,
+                                color: AppColors.grey400,
+                              ),
                             ),
                             SizedBox(height: 4),
                             Text(
@@ -184,7 +188,9 @@ class ConfirmOrderScreen extends StatelessWidget {
                             Text(
                               'Delivery Address',
                               style: TextStyle(
-                                  fontSize: 12, color: AppColors.grey400),
+                                fontSize: 12,
+                                color: AppColors.grey400,
+                              ),
                             ),
                             SizedBox(height: 4),
                             Text(
@@ -252,26 +258,26 @@ class ConfirmOrderScreen extends StatelessWidget {
               ),
               child: Stack(
                 children: [
-                   // Faint outline of a phone / device
-                   Center(
-                     child: Icon(
-                       Icons.smartphone,
-                       size: 160,
-                       color: Colors.white.withOpacity(0.03),
-                     ),
-                   ),
-                   const Positioned(
-                     bottom: 16,
-                     left: 16,
-                     child: Text(
-                       'Your package is being prepared for dispatch',
-                       style: TextStyle(
-                         color: Colors.white,
-                         fontSize: 12,
-                         fontWeight: FontWeight.w500,
-                       ),
-                     ),
-                   ),
+                  // Faint outline of a phone / device
+                  Center(
+                    child: Icon(
+                      Icons.smartphone,
+                      size: 160,
+                      color: Colors.white.withOpacity(0.03),
+                    ),
+                  ),
+                  const Positioned(
+                    bottom: 16,
+                    left: 16,
+                    child: Text(
+                      'Your package is being prepared for dispatch',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
                 ],
               ),
             ),
@@ -341,7 +347,10 @@ class ConfirmOrderScreen extends StatelessWidget {
         currentIndex: NavigationIndexService.currentIndex,
         onTap: (index) {
           NavigationIndexService.setIndex(index);
-          Navigator.popUntil(context, (route) => route.isFirst);
+          final route = NavigationIndexService.routeForIndex(index);
+          if (ModalRoute.of(context)?.settings.name != route) {
+            Navigator.pushNamed(context, route);
+          }
         },
       ),
     );

@@ -147,7 +147,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 width: double.infinity,
                                 child: ElevatedButton(
                                   onPressed: () {
-                                    Navigator.push(context, MaterialPageRoute(builder: (context) => const EditProfileScreen()));
+                                    Navigator.push(
+                                      context,
+                                      MaterialPageRoute(
+                                        builder: (context) =>
+                                            const EditProfileScreen(),
+                                      ),
+                                    );
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppColors.grey700,
@@ -210,25 +216,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
         currentIndex: NavigationIndexService.currentIndex,
         onTap: (index) {
           NavigationIndexService.setIndex(index);
-          setState(() {});
-
-          // Handle navigation
-          switch (index) {
-            case 0:
-              Navigator.pushNamed(context, '/home');
-              break;
-            case 1:
-              Navigator.pushNamed(context, '/products');
-              break;
-            case 2:
-              Navigator.pushNamed(context, '/wishlist');
-              break;
-            case 3:
-              Navigator.pushNamed(context, '/orders');
-              break;
-            case 4:
-              // Already on Profile
-              break;
+          final route = NavigationIndexService.routeForIndex(index);
+          if (ModalRoute.of(context)?.settings.name != route) {
+            Navigator.pushNamed(context, route);
           }
         },
       ),

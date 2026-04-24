@@ -4,6 +4,7 @@ import 'package:tekzo/widgets/index.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
 import 'OrderDetailScreen.dart';
 import 'ReviewScreen.dart';
+import 'TrackOrderScreen.dart';
 
 /// Order screen displaying active and completed orders with tabs.
 class OrderScreen extends StatefulWidget {
@@ -190,24 +191,9 @@ class _OrderScreenState extends State<OrderScreen> {
         currentIndex: NavigationIndexService.currentIndex,
         onTap: (index) {
           NavigationIndexService.setIndex(index);
-          setState(() {});
-
-          switch (index) {
-            case 0:
-              Navigator.pushNamed(context, '/home');
-              break;
-            case 1:
-              Navigator.pushNamed(context, '/products');
-              break;
-            case 2:
-              Navigator.pushNamed(context, '/wishlist');
-              break;
-            case 3:
-              // Already on Orders
-              break;
-            case 4:
-              Navigator.pushNamed(context, '/profile');
-              break;
+          final route = NavigationIndexService.routeForIndex(index);
+          if (ModalRoute.of(context)?.settings.name != route) {
+            Navigator.pushNamed(context, route);
           }
         },
       ),
@@ -335,7 +321,8 @@ class _OrderCard extends StatelessWidget {
               Expanded(
                 child: ElevatedButton(
                   onPressed: () {
-                    if (order.status == 'DELIVERED' || order.status == 'COMPLETED') {
+                    if (order.status == 'DELIVERED' ||
+                        order.status == 'COMPLETED') {
                       Navigator.push(
                         context,
                         MaterialPageRoute(
@@ -343,11 +330,10 @@ class _OrderCard extends StatelessWidget {
                         ),
                       );
                     } else {
-                      // Handle Track Order action
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Tracking your order...'),
-                          duration: Duration(seconds: 2),
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const TrackOrderScreen(),
                         ),
                       );
                     }
@@ -360,8 +346,8 @@ class _OrderCard extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    (order.status == 'DELIVERED' || order.status == 'COMPLETED') 
-                        ? 'Reviews' 
+                    (order.status == 'DELIVERED' || order.status == 'COMPLETED')
+                        ? 'Reviews'
                         : 'Track Order',
                     style: const TextStyle(
                       fontSize: 12,

@@ -135,25 +135,9 @@ class _WishlistScreenState extends State<WishlistScreen> {
         currentIndex: NavigationIndexService.currentIndex,
         onTap: (index) {
           NavigationIndexService.setIndex(index);
-          setState(() {});
-
-          // Handle navigation
-          switch (index) {
-            case 0:
-              Navigator.pushNamed(context, '/home');
-              break;
-            case 1:
-              Navigator.pushNamed(context, '/products');
-              break;
-            case 2:
-              // Already on Wishlist
-              break;
-            case 3:
-              Navigator.pushNamed(context, '/orders');
-              break;
-            case 4:
-              Navigator.pushNamed(context, '/profile');
-              break;
+          final route = NavigationIndexService.routeForIndex(index);
+          if (ModalRoute.of(context)?.settings.name != route) {
+            Navigator.pushNamed(context, route);
           }
         },
       ),

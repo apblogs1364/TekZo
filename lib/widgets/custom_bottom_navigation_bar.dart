@@ -4,12 +4,12 @@ import 'package:tekzo/services/navigation_index_service.dart';
 
 class CustomBottomNavigationBar extends StatefulWidget {
   final int currentIndex;
-  final Function(int) onTap;
+  final void Function(int)? onTap;
 
   const CustomBottomNavigationBar({
     Key? key,
     required this.currentIndex,
-    required this.onTap,
+    this.onTap,
   }) : super(key: key);
 
   @override
@@ -78,7 +78,14 @@ class _CustomBottomNavigationBarState extends State<CustomBottomNavigationBar> {
       child: BottomNavigationBar(
         type: BottomNavigationBarType.fixed,
         currentIndex: _localCurrentIndex,
-        onTap: widget.onTap,
+        onTap: (index) {
+          NavigationIndexService.setIndex(index);
+          final route = NavigationIndexService.routeForIndex(index);
+          if (ModalRoute.of(context)?.settings.name != route) {
+            Navigator.pushNamed(context, route);
+          }
+          // Intentionally do not call parent-provided onTap to avoid duplicate navigation
+        },
         backgroundColor: AppColors.white,
         selectedItemColor: AppColors.primary,
         unselectedItemColor: AppColors.grey400,

@@ -29,4 +29,41 @@ class NavigationIndexService extends ChangeNotifier {
   static const int WISHLIST = 2;
   static const int ORDERS = 3;
   static const int PROFILE = 4;
+
+  // Return the route name corresponding to a navigation index
+  static String routeForIndex(int index) {
+    switch (index) {
+      case HOME:
+        return '/home';
+      case PRODUCTS:
+        return '/products';
+      case WISHLIST:
+        return '/wishlist';
+      case ORDERS:
+        return '/orders';
+      case PROFILE:
+        return '/profile';
+      default:
+        return '/home';
+    }
+  }
+
+  // Return the navigation index corresponding to a route name.
+  // Returns HOME when the route is unknown/null.
+  static int indexForRoute(String? route) {
+    switch (route) {
+      case '/home':
+        return HOME;
+      case '/products':
+        return PRODUCTS;
+      case '/wishlist':
+        return WISHLIST;
+      case '/orders':
+        return ORDERS;
+      case '/profile':
+        return PROFILE;
+      default:
+        return HOME;
+    }
+  }
 }

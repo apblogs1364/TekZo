@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../widgets/custom_bottom_navigation_bar.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
-import 'dart:math' as math;
+//import 'dart:math' as math;
 import 'dart:ui';
 
 class ReviewScreen extends StatefulWidget {
