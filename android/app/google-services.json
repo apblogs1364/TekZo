@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "183700461034",
+    "project_id": "tekzo-eb301",
+    "storage_bucket": "tekzo-eb301.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:183700461034:android:e5ffce35270076ff58ce93",
+        "android_client_info": {
+          "package_name": "com.example.tekzo"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBjEf8lkV90zlebRDMnIk5xodIv0_02vDA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

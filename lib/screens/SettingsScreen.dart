@@ -2,14 +2,6 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../widgets/custom_bottom_navigation_bar.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
-import 'ShippingAddressScreen.dart';
-import 'PaymentMethodsScreen.dart';
-import 'ChangePasswordScreen.dart';
-import 'ProfileScreen.dart';
-import 'TermsAndServicesScreen.dart';
-import 'PrivacyPolicyScreen.dart';
-import 'ContactSupportScreen.dart';
-import 'EditProfileScreen.dart';
 
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({Key? key}) : super(key: key);
@@ -55,14 +47,25 @@ class _SettingsScreenState extends State<SettingsScreen> {
             _buildSectionTitle('ACCOUNT', sectionTitleColor),
             const SizedBox(height: 12),
             _buildSectionCard([
-              _buildSettingsTile(icon: Icons.person_outline, title: 'Edit Profile', linkColor: linkColor),
+              _buildSettingsTile(
+                icon: Icons.person_outline,
+                title: 'Edit Profile',
+                linkColor: linkColor,
+              ),
               _buildDivider(),
-              _buildSettingsTile(icon: Icons.local_shipping_outlined, title: 'Shipping Addresses', linkColor: linkColor),
+              _buildSettingsTile(
+                icon: Icons.local_shipping_outlined,
+                title: 'Shipping Addresses',
+                linkColor: linkColor,
+              ),
               _buildDivider(),
-              _buildSettingsTile(icon: Icons.credit_card_outlined, title: 'Payment Methods', linkColor: linkColor),
+              _buildSettingsTile(
+                icon: Icons.credit_card_outlined,
+                title: 'Payment Methods',
+                linkColor: linkColor,
+              ),
             ]),
             const SizedBox(height: 24),
-
             _buildSectionTitle('NOTIFICATIONS', sectionTitleColor),
             const SizedBox(height: 12),
             _buildSectionCard([
@@ -81,25 +84,46 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   activeTrackColor: const Color(0xFF8CA5C1),
                 ),
               ),
+              _buildDivider(),
+              _buildSettingsTile(
+                icon: Icons.email_outlined,
+                title: 'Email Preferences',
+                linkColor: linkColor,
+              ),
             ]),
             const SizedBox(height: 24),
-
             _buildSectionTitle('SECURITY & PRIVACY', sectionTitleColor),
             const SizedBox(height: 12),
             _buildSectionCard([
-              _buildSettingsTile(icon: Icons.lock_outline, title: 'Change Password', linkColor: linkColor),
+              _buildSettingsTile(
+                icon: Icons.lock_outline,
+                title: 'Change Password',
+                linkColor: linkColor,
+              ),
               _buildDivider(),
-              _buildSettingsTile(icon: Icons.privacy_tip_outlined, title: 'Privacy Policy', linkColor: linkColor),
+              _buildSettingsTile(
+                icon: Icons.privacy_tip_outlined,
+                title: 'Privacy Policy',
+                linkColor: linkColor,
+              ),
             ]),
             const SizedBox(height: 24),
-
             _buildSectionTitle('SUPPORT', sectionTitleColor),
             const SizedBox(height: 12),
             _buildSectionCard([
-              _buildSettingsTile(icon: Icons.support_agent_outlined, title: 'Contact Us', linkColor: linkColor),
+              _buildSettingsTile(
+                icon: Icons.help_outline,
+                title: 'Help Center',
+                linkColor: linkColor,
+              ),
+              _buildDivider(),
+              _buildSettingsTile(
+                icon: Icons.support_agent_outlined,
+                title: 'Contact Us',
+                linkColor: linkColor,
+              ),
             ]),
             const SizedBox(height: 24),
-
             _buildSectionTitle('APP INFO', sectionTitleColor),
             const SizedBox(height: 12),
             _buildSectionCard([
@@ -107,10 +131,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 icon: Icons.info_outline,
                 title: 'Version',
                 linkColor: linkColor,
-                trailing: const Text('1.0.4', style: TextStyle(color: Color(0xFFA1B0CE), fontWeight: FontWeight.bold)),
+                trailing: const Text(
+                  '1.0.4',
+                  style: TextStyle(
+                    color: Color(0xFFA1B0CE),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
               ),
               _buildDivider(),
-              _buildSettingsTile(icon: Icons.description_outlined, title: 'Terms of Service', linkColor: linkColor),
+              _buildSettingsTile(
+                icon: Icons.description_outlined,
+                title: 'Terms of Service',
+                linkColor: linkColor,
+              ),
             ]),
             const SizedBox(height: 32),
             _buildLogoutButton(sectionTitleColor),
@@ -122,64 +156,51 @@ class _SettingsScreenState extends State<SettingsScreen> {
         currentIndex: NavigationIndexService.currentIndex,
         onTap: (index) {
           NavigationIndexService.setIndex(index);
-          final route = NavigationIndexService.routeForIndex(index);
-          if (ModalRoute.of(context)?.settings.name != route) {
-            Navigator.pushNamed(context, route);
-          }
+          Navigator.popUntil(context, (route) => route.isFirst);
         },
       ),
     );
   }
 
   Widget _buildProfileHeader() {
-    return InkWell(
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const ProfileScreen()),
-        );
-      },
-      child: Row(
-        children: [
-          Container(
-            width: 56,
-            height: 56,
-            decoration: BoxDecoration(
-              shape: BoxShape.circle,
-              color: AppColors.grey200,
-              image: const DecorationImage(
-                image: AssetImage(
-                  'assets/images/user_avatar.png',
-                ), // Placeholder
+    return Row(
+      children: [
+        Container(
+          width: 56,
+          height: 56,
+          decoration: BoxDecoration(
+            shape: BoxShape.circle,
+            color: AppColors.grey200,
+            image: const DecorationImage(
+              image: AssetImage('assets/images/user_avatar.png'), // Placeholder
+            ),
+          ),
+          child: const Icon(Icons.person, color: Colors.white, size: 36),
+        ),
+        const SizedBox(width: 16),
+        Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: const [
+            Text(
+              'Anjali Parmar',
+              style: TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.w900,
+                color: AppColors.black87,
               ),
             ),
-            child: const Icon(Icons.person, color: Colors.white, size: 36),
-          ),
-          const SizedBox(width: 16),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Text(
-                'Anjali Parmar',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.black87,
-                ),
+            SizedBox(height: 2),
+            Text(
+              'View Profile',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+                color: Color(0xFFA1B0CE),
               ),
-              SizedBox(height: 2),
-              Text(
-                'View Profile',
-                style: TextStyle(
-                  fontSize: 13,
-                  fontWeight: FontWeight.w500,
-                  color: Color(0xFFA1B0CE),
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+            ),
+          ],
+        ),
+      ],
     );
   }
 
@@ -236,60 +257,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
             size: 14,
             color: linkColor.withOpacity(0.4),
           ),
-      onTap: trailing is Switch
-          ? null
-          : () {
-              if (title == 'Shipping Addresses') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ShippingAddressScreen(),
-                  ),
-                );
-              } else if (title == 'Edit Profile') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const EditProfileScreen(),
-                  ),
-                );
-              } else if (title == 'Payment Methods') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const PaymentMethodsScreen(),
-                  ),
-                );
-              } else if (title == 'Contact Us') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ContactSupportScreen(),
-                  ),
-                );
-              } else if (title == 'Terms of Service') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const TermsAndServicesScreen(),
-                  ),
-                );
-              } else if (title == 'Privacy Policy') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const PrivacyPolicyScreen(),
-                  ),
-                );
-              } else if (title == 'Change Password') {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => const ChangePasswordScreen(),
-                  ),
-                );
-              }
-            },
+      onTap: trailing is Switch ? null : () {},
     );
   }
 
