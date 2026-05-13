@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../theme/app_colors.dart';
+import 'package:tekzo/services/auth_service.dart';
+import 'EditProfileScreen.dart';
 import 'package:tekzo/widgets/index.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
-import 'EditProfileScreen.dart';
 
 /// Profile screen showing user info and account management options.
 class ProfileScreen extends StatefulWidget {
@@ -50,6 +51,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = AuthService.instance.currentUser;
     return Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
@@ -117,9 +119,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   ),
                                   const SizedBox(height: 12),
                                   // User Name
-                                  const Text(
-                                    'Anjali Parmar',
-                                    style: TextStyle(
+                                  Text(
+                                    user == null
+                                        ? 'Guest'
+                                        : (user.displayName ??
+                                              user.email ??
+                                              ''),
+                                    style: const TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
                                     ),
@@ -127,7 +133,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   const SizedBox(height: 4),
                                   // User Info
                                   Text(
-                                    'anjali.p@email.com',
+                                    user == null
+                                        ? 'Not logged in'
+                                        : (user.email ?? ''),
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: AppColors.grey600,
@@ -136,7 +144,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                 ],
                               ),
                             ),
-                            // Edit Profile Button
+                            // Edit Profile or Login Button
                             Padding(
                               padding: const EdgeInsets.only(
                                 left: 20,
@@ -146,7 +154,11 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               child: SizedBox(
                                 width: double.infinity,
                                 child: ElevatedButton(
-                                  onPressed: () {
+                                  onPressed: () async {
+                                    if (user == null) {
+                                      Navigator.pushNamed(context, '/login');
+                                      return;
+                                    }
                                     Navigator.push(
                                       context,
                                       MaterialPageRoute(
@@ -164,9 +176,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       borderRadius: BorderRadius.circular(8),
                                     ),
                                   ),
-                                  child: const Text(
-                                    'Edit Profile',
-                                    style: TextStyle(
+                                  child: Text(
+                                    user == null ? 'Login' : 'Edit Profile',
+                                    style: const TextStyle(
                                       color: AppColors.white,
                                       fontSize: 14,
                                       fontWeight: FontWeight.w600,
@@ -179,32 +191,33 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         ),
                       ),
                     ),
-                    // Activity Section
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          const Text(
-                            'YOUR ACTIVITY',
-                            style: TextStyle(
-                              fontSize: 12,
-                              fontWeight: FontWeight.bold,
-                              color: AppColors.grey500,
-                              letterSpacing: 1,
+                    // Activity Section - Only show for logged-in users
+                    if (user != null)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'YOUR ACTIVITY',
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.bold,
+                                color: AppColors.grey500,
+                                letterSpacing: 1,
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 12),
-                          Column(
-                            children: List.generate(
-                              menuItems.length,
-                              (index) => _buildMenuItem(menuItems[index]),
+                            const SizedBox(height: 12),
+                            Column(
+                              children: List.generate(
+                                menuItems.length,
+                                (index) => _buildMenuItem(menuItems[index]),
+                              ),
                             ),
-                          ),
-                          const SizedBox(height: 24),
-                        ],
+                            const SizedBox(height: 24),
+                          ],
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
@@ -273,7 +286,17 @@ class _ProfileScreenState extends State<ProfileScreen> {
                 size: 16,
                 color: AppColors.grey500,
               ),
-        onTap: () {},
+        onTap: () async {
+          if (item.isSignOut) {
+            await AuthService.instance.signOut();
+            setState(() {});
+            ScaffoldMessenger.of(
+              context,
+            ).showSnackBar(const SnackBar(content: Text('Signed out')));
+            return;
+          }
+          // preserve existing behavior for other items
+        },
       ),
     );
   }

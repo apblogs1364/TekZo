@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
 import 'package:tekzo/screens/SplashScreen.dart';
 import 'package:tekzo/screens/HomeScreen.dart';
 import 'package:tekzo/screens/LoginScreen.dart';
@@ -26,7 +28,8 @@ import 'package:tekzo/screens/AdminConfigScreen.dart';
 import 'package:tekzo/screens/AdminCustomerCareScreen.dart';
 
 void main() {
-  runApp(const MyApp());
+  WidgetsFlutterBinding.ensureInitialized();
+  runApp(const MyAppWrapper());
 }
 
 class MyApp extends StatelessWidget {
@@ -58,10 +61,8 @@ class MyApp extends StatelessWidget {
         '/admin/products': (context) => const AdminProductManageScreen(),
         '/admin/categories': (context) => const AdminCategoryManageScreen(),
         '/admin/categories/add': (context) => const AdminAddCategory(),
-        '/admin/products/edit': (context) => const AdminEditProduct(
-          productName: '',
-          sku: '',
-        ),
+        '/admin/products/edit': (context) =>
+            const AdminEditProduct(productName: '', sku: ''),
         '/admin/orders': (context) => const AdminOrderManageScreen(),
         '/admin/reviews': (context) => const AdminReviewManageScreen(),
         '/admin/config': (context) => const AdminConfigScreen(),
@@ -86,6 +87,27 @@ class MyApp extends StatelessWidget {
           avatarColor: Color(0xFF5B8EA6),
           avatarInitials: '',
         ),
+      },
+    );
+  }
+}
+
+class MyAppWrapper extends StatelessWidget {
+  const MyAppWrapper({Key? key}) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder(
+      future: Firebase.initializeApp(
+        options: DefaultFirebaseOptions.currentPlatform,
+      ),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.done) {
+          return const MyApp();
+        }
+        return const MaterialApp(
+          home: Scaffold(body: Center(child: CircularProgressIndicator())),
+        );
       },
     );
   }
