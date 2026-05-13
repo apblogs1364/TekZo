@@ -51,7 +51,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final user = AuthService.instance.currentUser;
+    final user = AuthService.instance.loggedInUserData;
     return Scaffold(
       backgroundColor: AppColors.white,
       body: SafeArea(
@@ -122,9 +122,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   Text(
                                     user == null
                                         ? 'Guest'
-                                        : (user.displayName ??
-                                              user.email ??
-                                              ''),
+                                        : '${user['firstName'] ?? ''} ${user['lastName'] ?? ''}'.trim(),
                                     style: const TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
@@ -135,7 +133,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   Text(
                                     user == null
                                         ? 'Not logged in'
-                                        : (user.email ?? ''),
+                                        : (user['email'] ?? ''),
                                     style: TextStyle(
                                       fontSize: 12,
                                       color: AppColors.grey600,

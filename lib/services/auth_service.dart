@@ -1,34 +1,44 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_auth/firebase_auth.dart';
 
 class AuthService {
   AuthService._();
   static final instance = AuthService._();
 
-  final FirebaseAuth _auth = FirebaseAuth.instance;
   final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  User? get currentUser => _auth.currentUser;
-
-  Stream<User?> authStateChanges() => _auth.authStateChanges();
+  // Store logged-in user data locally
+  Map<String, dynamic>? _loggedInUserData;
+  Map<String, dynamic>? get loggedInUserData => _loggedInUserData;
+  bool get isLoggedIn => _loggedInUserData != null;
 
   Future<Map<String, dynamic>> signIn({
     required String email,
     required String password,
   }) async {
-    final cred = await _auth.signInWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-    final uid = cred.user!.uid;
-    final snap = await _db.collection('users').doc(uid).get();
-    return snap.exists ? snap.data()! : {'role': 'customer'};
+    final querySnapshot = await _db
+        .collection('users')
+        .where('email', isEqualTo: email)
+        .get();
+
+    if (querySnapshot.docs.isEmpty) {
+      throw Exception('No user found with this email');
+    }
+
+    final userDoc = querySnapshot.docs.first;
+    final userData = userDoc.data();
+
+    if (userData['password'] != password) {
+      throw Exception('Incorrect password');
+    }
+
+    _loggedInUserData = userData;
+    return userData;
   }
 
   Future<void> signOut() async {
-    await _auth.signOut();
+    _loggedInUserData = null;
   }
 
   Future<String> registerUser({
@@ -42,13 +52,19 @@ class AuthService {
     File? profileImageFile,
     String role = 'customer',
   }) async {
-    final cred = await _auth.createUserWithEmailAndPassword(
-      email: email,
-      password: password,
-    );
-    final uid = cred.user!.uid;
+    // Check if email already exists
+    final existing = await _db
+        .collection('users')
+        .where('email', isEqualTo: email)
+        .get();
+    if (existing.docs.isNotEmpty) {
+      throw Exception('Email already in use');
+    }
+
+    final docRef = _db.collection('users').doc();
     final data = {
       'email': email,
+      'password': password,
       'firstName': firstName,
       'lastName': lastName,
       'gender': gender,
@@ -58,7 +74,7 @@ class AuthService {
       'role': role,
       'createdAt': FieldValue.serverTimestamp(),
     };
-    await _db.collection('users').doc(uid).set(data);
-    return uid;
+    await docRef.set(data);
+    return docRef.id;
   }
 }
