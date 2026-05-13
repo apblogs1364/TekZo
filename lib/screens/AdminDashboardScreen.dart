@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../theme/app_colors.dart';
 import '../widgets/admin_bottom_navigation_bar.dart';
+import 'AdminProfileScreen.dart';
 
 /// Admin dashboard screen showing stats, quick actions, and recent orders.
 class AdminDashboardScreen extends StatefulWidget {
@@ -12,7 +14,14 @@ class AdminDashboardScreen extends StatefulWidget {
 }
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
+  String _totalSales = '₹0';
+  String _activeUsers = '0';
+  String _newOrders = '0';
+  String _totalProducts = '0';
+  List<_RecentOrder> _recentOrders = [];
+  bool _isLoading = true;
 
   static const _quickActions = <_QuickAction>[
     _QuickAction(label: 'Manage Product', icon: Icons.add_shopping_cart),
@@ -22,34 +31,90 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
     _QuickAction(label: 'Manage Reviews', icon: Icons.rate_review),
   ];
 
-  final _recentOrders = <_RecentOrder>[
-    _RecentOrder(
-      product: 'MacBook Pro M3',
-      customer: 'Alex Johnson',
-      orderId: '#TK-8492',
-      price: '₹2,499',
-      status: 'Pending',
-      statusColor: AppColors.warning,
-    ),
-    _RecentOrder(
-      product: 'Sony WH-1000XM5',
-      customer: 'Sarah Miller',
-      orderId: '#TK-8491',
-      price: '₹349',
-      status: 'Shipped',
-      statusColor: AppColors.success,
-    ),
-    _RecentOrder(
-      product: 'Apple Watch Ultra',
-      customer: 'David Chen',
-      orderId: '#TK-8490',
-      price: '₹799',
-      status: 'Shipped',
-      statusColor: AppColors.success,
-    ),
-  ];
+  @override
+  void initState() {
+    super.initState();
+    _fetchDashboardData();
+  }
 
+  Future<void> _fetchDashboardData() async {
+    try {
+      // Fetch total sales (sum of totalAmount from orders)
+      final ordersSnapshot = await _db.collection('orders').get();
+      double totalSales = 0;
+      int orderCount = 0;
+      for (var doc in ordersSnapshot.docs) {
+        final data = doc.data();
+        totalSales +=
+            (double.tryParse(data['totalAmount']?.toString() ?? '0') ?? 0);
+        orderCount++;
+      }
 
+      // Fetch active users count
+      final usersSnapshot = await _db.collection('users').get();
+      int userCount = usersSnapshot.docs.length;
+
+      // Fetch total products count
+      final productsSnapshot = await _db.collection('products').get();
+      int productCount = productsSnapshot.docs.length;
+
+      // Fetch recent orders (all orders and take last 3)
+      final recentOrdersSnapshot = await _db.collection('orders').get();
+
+      List<_RecentOrder> recentOrders = [];
+      for (var doc in recentOrdersSnapshot.docs) {
+        final data = doc.data();
+        final status = data['orderStatus']?.toString() ?? 'Pending';
+        final statusColor = _getStatusColor(status);
+
+        recentOrders.add(
+          _RecentOrder(
+            product: data['orderNumber']?.toString() ?? 'Order',
+            customer: 'Order #${data['orderNumber']?.toString() ?? 'N/A'}',
+            orderId: '#${doc.id.substring(0, 6).toUpperCase()}',
+            price: '₹${data['totalAmount']?.toString() ?? '0'}',
+            status: status,
+            statusColor: statusColor,
+          ),
+        );
+      }
+
+      // Take only last 3 orders
+      if (recentOrders.length > 3) {
+        recentOrders = recentOrders.sublist(recentOrders.length - 3);
+      }
+
+      if (mounted) {
+        setState(() {
+          _totalSales = '₹${(totalSales / 1000).toStringAsFixed(1)}k';
+          _activeUsers = userCount.toString();
+          _newOrders = orderCount.toString();
+          _totalProducts = productCount.toString();
+          _recentOrders = recentOrders;
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print('Dashboard fetch error: $e');
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
+    }
+  }
+
+  Color _getStatusColor(String status) {
+    switch (status.toLowerCase()) {
+      case 'pending':
+        return AppColors.warning;
+      case 'shipped':
+      case 'completed':
+        return AppColors.success;
+      case 'cancelled':
+        return AppColors.danger;
+      default:
+        return AppColors.grey600;
+    }
+  }
 
   void _handleQuickActionTap(String actionLabel) {
     switch (actionLabel) {
@@ -116,10 +181,20 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             ),
           ),
           const SizedBox(width: 12),
-          const CircleAvatar(
-            radius: 21,
-            backgroundColor: AppColors.white,
-            child: Icon(Icons.person, color: AppColors.primaryDark),
+          GestureDetector(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const AdminProfileScreen(),
+                ),
+              );
+            },
+            child: const CircleAvatar(
+              radius: 21,
+              backgroundColor: AppColors.white,
+              child: Icon(Icons.person, color: AppColors.primaryDark),
+            ),
           ),
         ],
       ),
@@ -163,32 +238,32 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           mainAxisSpacing: 12,
           childAspectRatio: 1.8,
           physics: const NeverScrollableScrollPhysics(),
-          children: const [
+          children: [
             _StatCard(
               label: 'Total Sales',
-              value: '₹42.8k',
+              value: _totalSales,
               icon: Icons.monetization_on_outlined,
               iconBackground: AppColors.primary,
               valueColor: AppColors.primaryDark,
             ),
             _StatCard(
               label: 'Active Users',
-              value: '1,240',
+              value: _activeUsers,
               icon: Icons.person_outline,
               iconBackground: AppColors.warning,
               valueColor: AppColors.grey700,
             ),
             _StatCard(
               label: 'New Orders',
-              value: '184',
+              value: _newOrders,
               icon: Icons.shopping_cart_outlined,
               iconBackground: AppColors.secondary,
               valueColor: AppColors.grey700,
             ),
             _StatCard(
-              label: 'Revenue',
-              value: '₹12.4k',
-              icon: Icons.trending_up_outlined,
+              label: 'Total Products',
+              value: _totalProducts,
+              icon: Icons.inventory_2_outlined,
               iconBackground: AppColors.success,
               valueColor: AppColors.grey700,
             ),
@@ -245,11 +320,24 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
           ),
         ),
         const SizedBox(height: 12),
-        Column(
-          children: _recentOrders
-              .map((order) => _RecentOrderTile(order: order))
-              .toList(),
-        ),
+        _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation(AppColors.primary),
+                ),
+              )
+            : _recentOrders.isEmpty
+            ? const Center(
+                child: Text(
+                  'No orders yet',
+                  style: TextStyle(fontSize: 14, color: AppColors.grey600),
+                ),
+              )
+            : Column(
+                children: _recentOrders
+                    .map((order) => _RecentOrderTile(order: order))
+                    .toList(),
+              ),
       ],
     );
   }

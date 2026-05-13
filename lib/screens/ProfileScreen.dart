@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'dart:io';
 
 import '../theme/app_colors.dart';
 import 'package:tekzo/services/auth_service.dart';
 import 'EditProfileScreen.dart';
+import 'OrderScreen.dart';
+import 'ShippingAddressScreen.dart';
+import 'PaymentMethodsScreen.dart';
+import 'SettingsScreen.dart';
 import 'package:tekzo/widgets/index.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
 
@@ -110,11 +115,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       ),
                                     ),
                                     child: Center(
-                                      child: Icon(
-                                        Icons.person,
-                                        size: 40,
-                                        color: AppColors.grey600,
-                                      ),
+                                      child: _buildProfileImage(user),
                                     ),
                                   ),
                                   const SizedBox(height: 12),
@@ -122,7 +123,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                   Text(
                                     user == null
                                         ? 'Guest'
-                                        : '${user['firstName'] ?? ''} ${user['lastName'] ?? ''}'.trim(),
+                                        : '${user['firstName'] ?? ''} ${user['lastName'] ?? ''}'
+                                              .trim(),
                                     style: const TextStyle(
                                       fontSize: 20,
                                       fontWeight: FontWeight.bold,
@@ -157,13 +159,16 @@ class _ProfileScreenState extends State<ProfileScreen> {
                                       Navigator.pushNamed(context, '/login');
                                       return;
                                     }
-                                    Navigator.push(
+                                    final result = await Navigator.push(
                                       context,
                                       MaterialPageRoute(
                                         builder: (context) =>
                                             const EditProfileScreen(),
                                       ),
                                     );
+                                    if (result == true && mounted) {
+                                      setState(() {});
+                                    }
                                   },
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: AppColors.grey700,
@@ -293,10 +298,65 @@ class _ProfileScreenState extends State<ProfileScreen> {
             ).showSnackBar(const SnackBar(content: Text('Signed out')));
             return;
           }
-          // preserve existing behavior for other items
+
+          switch (item.title) {
+            case 'My Orders':
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const OrderScreen()),
+              );
+              break;
+            case 'Addresses':
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const ShippingAddressScreen(),
+                ),
+              );
+              break;
+            case 'Payment Methods':
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => const PaymentMethodsScreen(),
+                ),
+              );
+              break;
+            case 'Settings':
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (context) => const SettingsScreen()),
+              );
+              break;
+          }
         },
       ),
     );
+  }
+
+  Widget _buildProfileImage(Map<String, dynamic>? user) {
+    if (user == null) {
+      return Icon(Icons.person, size: 40, color: AppColors.grey600);
+    }
+
+    final profileImageUrl = user['profileImageUrl']?.toString() ?? '';
+
+    if (profileImageUrl.isEmpty) {
+      return Icon(Icons.person, size: 40, color: AppColors.grey600);
+    }
+
+    // Check if it's a local file path
+    if (profileImageUrl.startsWith('/')) {
+      final file = File(profileImageUrl);
+      if (file.existsSync()) {
+        return ClipOval(
+          child: Image.file(file, fit: BoxFit.cover, width: 80, height: 80),
+        );
+      }
+    }
+
+    // Fallback to placeholder icon
+    return Icon(Icons.person, size: 40, color: AppColors.grey600);
   }
 }
 

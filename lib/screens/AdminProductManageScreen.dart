@@ -393,7 +393,7 @@ class _ProductCard extends StatelessWidget {
                       size: 20,
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(width: 16),
                   GestureDetector(
                     onTap: () {},
                     child: const Icon(

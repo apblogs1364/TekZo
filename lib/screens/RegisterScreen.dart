@@ -559,6 +559,7 @@ class _RegisterScreenState extends State<RegisterScreen> {
                                     : '',
                                 phone: _phoneController.text.trim(),
                                 profileImageFile: _profileImageFile,
+                                role: 'customer',
                               );
                               Navigator.pop(context, true);
                               Navigator.pushReplacementNamed(context, '/login');

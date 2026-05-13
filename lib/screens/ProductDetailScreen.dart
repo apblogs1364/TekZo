@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:tekzo/services/auth_service.dart';
 import '../theme/app_colors.dart';
 
 /// Product detail screen showing images, description, and reviews for a product.
@@ -13,7 +14,8 @@ class ProductDetailScreen extends StatefulWidget {
 class _ProductDetailScreenState extends State<ProductDetailScreen> {
   int _currentImageIndex = 0;
   int _quantity = 1;
-  bool _isLoggedIn = false;
+
+  bool get _isLoggedIn => AuthService.instance.isLoggedIn;
 
   final List<String> productImages = [
     'assets/images/headphones1.jpg',

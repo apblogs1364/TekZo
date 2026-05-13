@@ -1,6 +1,11 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+
 import '../theme/app_colors.dart';
 import '../widgets/custom_bottom_navigation_bar.dart';
+import 'package:tekzo/services/auth_service.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
 
 class EditProfileScreen extends StatefulWidget {
@@ -11,16 +16,44 @@ class EditProfileScreen extends StatefulWidget {
 }
 
 class _EditProfileScreenState extends State<EditProfileScreen> {
-  final TextEditingController nameController = TextEditingController(text: 'Anjali Parmar');
-  final TextEditingController emailController = TextEditingController(text: 'anjali.p@example.com');
-  final TextEditingController phoneController = TextEditingController(text: '+91 98765 43210');
-  final TextEditingController locationController = TextEditingController(text: 'Bengaluru, KA');
+  late final TextEditingController nameController;
+  late final TextEditingController emailController;
+  late final TextEditingController phoneController;
+  late final TextEditingController dobController;
+  late final TextEditingController locationController;
+
+  DateTime? _selectedDob;
+  File? _profileImageFile;
+  String _profileImageUrl = '';
+
+  @override
+  void initState() {
+    super.initState();
+    final user = AuthService.instance.loggedInUserData;
+
+    nameController = TextEditingController(text: _buildFullName(user));
+    emailController = TextEditingController(
+      text: user?['email']?.toString() ?? '',
+    );
+    phoneController = TextEditingController(
+      text: user?['phone']?.toString() ?? '',
+    );
+    _selectedDob = _parseDob(user?['dob']?.toString());
+    dobController = TextEditingController(
+      text: _formatDobForDisplay(_selectedDob),
+    );
+    _profileImageUrl = user?['profileImageUrl']?.toString() ?? '';
+    locationController = TextEditingController(
+      text: user?['location']?.toString() ?? 'Bengaluru, KA',
+    );
+  }
 
   @override
   void dispose() {
     nameController.dispose();
     emailController.dispose();
     phoneController.dispose();
+    dobController.dispose();
     locationController.dispose();
     super.dispose();
   }
@@ -50,10 +83,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         centerTitle: true,
         actions: [
           TextButton(
-            onPressed: () {
-              // Save logic
-              Navigator.pop(context);
-            },
+            onPressed: _saveProfile,
             child: const Text(
               'Save',
               style: TextStyle(
@@ -88,47 +118,63 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
   }
 
   Widget _buildProfilePicHeader(Color linkColor) {
+    final ImageProvider avatarImage = _profileImageFile != null
+        ? FileImage(_profileImageFile!)
+        : (_profileImageUrl.isNotEmpty
+              ? NetworkImage(_profileImageUrl)
+              : const AssetImage('assets/images/user_avatar.png'));
+
     return Column(
       children: [
         Stack(
           clipBehavior: Clip.none,
           children: [
-            Container(
-              width: 100,
-              height: 100,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.grey200,
-                image: const DecorationImage(
-                  image: AssetImage('assets/images/user_avatar.png'), // Placeholder
-                  fit: BoxFit.cover,
+            GestureDetector(
+              onTap: _pickProfileImage,
+              child: Container(
+                width: 100,
+                height: 100,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: AppColors.grey200,
+                  image: DecorationImage(image: avatarImage, fit: BoxFit.cover),
+                  border: Border.all(color: Colors.white, width: 2),
+                  boxShadow: [
+                    BoxShadow(
+                      color: Colors.black.withOpacity(0.1),
+                      blurRadius: 10,
+                      offset: const Offset(0, 4),
+                    ),
+                  ],
                 ),
-                border: Border.all(color: Colors.white, width: 2),
-                boxShadow: [
-                  BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 10, offset: const Offset(0, 4)),
-                ],
               ),
-              child: const Icon(Icons.person, color: Colors.white, size: 50),
             ),
             Positioned(
               bottom: 0,
               right: 0,
-              child: Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: linkColor,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.white, width: 2),
+              child: GestureDetector(
+                onTap: _pickProfileImage,
+                child: Container(
+                  padding: const EdgeInsets.all(6),
+                  decoration: BoxDecoration(
+                    color: linkColor,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: const Icon(
+                    Icons.camera_alt_outlined,
+                    color: Colors.white,
+                    size: 14,
+                  ),
                 ),
-                child: const Icon(Icons.camera_alt_outlined, color: Colors.white, size: 14),
               ),
             ),
           ],
         ),
         const SizedBox(height: 16),
-        const Text(
-          'Anjali Parmar',
-          style: TextStyle(
+        Text(
+          nameController.text.isEmpty ? 'Guest' : nameController.text,
+          style: const TextStyle(
             fontSize: 20,
             fontWeight: FontWeight.w900,
             color: AppColors.black87,
@@ -166,17 +212,47 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         children: [
           _buildFieldGroup('FULL NAME', Icons.person_outline, nameController),
           const SizedBox(height: 24),
-          _buildFieldGroup('EMAIL ADDRESS', Icons.email_outlined, emailController, keyboardType: TextInputType.emailAddress, readOnly: true),
+          _buildFieldGroup(
+            'EMAIL ADDRESS',
+            Icons.email_outlined,
+            emailController,
+            keyboardType: TextInputType.emailAddress,
+            readOnly: true,
+          ),
           const SizedBox(height: 24),
-          _buildFieldGroup('PHONE NUMBER', Icons.phone_outlined, phoneController, keyboardType: TextInputType.phone),
+          _buildFieldGroup(
+            'DATE OF BIRTH',
+            Icons.calendar_today_outlined,
+            dobController,
+            readOnly: true,
+            onTap: _pickDob,
+          ),
           const SizedBox(height: 24),
-          _buildFieldGroup('LOCATION', Icons.location_on_outlined, locationController),
+          _buildFieldGroup(
+            'PHONE NUMBER',
+            Icons.phone_outlined,
+            phoneController,
+            keyboardType: TextInputType.phone,
+          ),
+          const SizedBox(height: 24),
+          _buildFieldGroup(
+            'LOCATION',
+            Icons.location_on_outlined,
+            locationController,
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildFieldGroup(String label, IconData icon, TextEditingController controller, {TextInputType keyboardType = TextInputType.text, bool readOnly = false}) {
+  Widget _buildFieldGroup(
+    String label,
+    IconData icon,
+    TextEditingController controller, {
+    TextInputType keyboardType = TextInputType.text,
+    bool readOnly = false,
+    VoidCallback? onTap,
+  }) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -199,6 +275,7 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
             controller: controller,
             keyboardType: keyboardType,
             readOnly: readOnly,
+            onTap: onTap,
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.w600,
@@ -213,5 +290,130 @@ class _EditProfileScreenState extends State<EditProfileScreen> {
         ),
       ],
     );
+  }
+
+  Future<void> _pickDob() async {
+    final initialDate =
+        _selectedDob ?? DateTime.now().subtract(const Duration(days: 365 * 18));
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: initialDate,
+      firstDate: DateTime(1900),
+      lastDate: DateTime.now(),
+    );
+
+    if (picked == null) {
+      return;
+    }
+
+    setState(() {
+      _selectedDob = picked;
+      dobController.text = _formatDobForDisplay(picked);
+    });
+  }
+
+  Future<void> _pickProfileImage() async {
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+
+    if (picked == null) {
+      return;
+    }
+
+    setState(() {
+      _profileImageFile = File(picked.path);
+    });
+  }
+
+  Future<void> _saveProfile() async {
+    final fullName = nameController.text.trim();
+    if (fullName.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Please enter your name')));
+      return;
+    }
+
+    try {
+      final nameParts = fullName.split(RegExp(r'\s+'));
+      final firstName = nameParts.first;
+      final lastName = nameParts.length > 1
+          ? nameParts.sublist(1).join(' ')
+          : '';
+
+      await AuthService.instance.updateLoggedInUserProfile(
+        firstName: firstName,
+        lastName: lastName,
+        phone: phoneController.text.trim(),
+        dob: _formatDobForDatabase(_selectedDob),
+        location: locationController.text.trim(),
+        profileImageFile: _profileImageFile,
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(e.toString())));
+    }
+  }
+
+  String _buildFullName(Map<String, dynamic>? user) {
+    final firstName = user?['firstName']?.toString().trim() ?? '';
+    final lastName = user?['lastName']?.toString().trim() ?? '';
+    final fullName = '$firstName $lastName'.trim();
+    return fullName.isEmpty ? 'Anjali Parmar' : fullName;
+  }
+
+  DateTime? _parseDob(String? value) {
+    if (value == null || value.trim().isEmpty) {
+      return null;
+    }
+
+    try {
+      return DateTime.parse(value.trim());
+    } catch (_) {
+      final parts = value.split('/');
+      if (parts.length == 3) {
+        final day = int.tryParse(parts[0]);
+        final month = int.tryParse(parts[1]);
+        final year = int.tryParse(parts[2]);
+        if (day != null && month != null && year != null) {
+          return DateTime(year, month, day);
+        }
+      }
+    }
+
+    return null;
+  }
+
+  String _formatDobForDisplay(DateTime? date) {
+    if (date == null) {
+      return '';
+    }
+
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '$day/$month/${date.year}';
+  }
+
+  String _formatDobForDatabase(DateTime? date) {
+    if (date == null) {
+      return '';
+    }
+
+    final day = date.day.toString().padLeft(2, '0');
+    final month = date.month.toString().padLeft(2, '0');
+    return '${date.year}-$month-$day';
   }
 }

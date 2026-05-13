@@ -26,6 +26,8 @@ import 'package:tekzo/screens/AdminReviewManageScreen.dart';
 import 'package:tekzo/screens/AdminEditReviewScreen.dart';
 import 'package:tekzo/screens/AdminConfigScreen.dart';
 import 'package:tekzo/screens/AdminCustomerCareScreen.dart';
+import 'package:tekzo/screens/AdminProfileScreen.dart';
+import 'package:tekzo/screens/AdminEditProfileScreen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -57,6 +59,8 @@ class MyApp extends StatelessWidget {
         '/wishlist': (context) => const WishlistScreen(),
         '/orders': (context) => const OrderScreen(),
         '/admin': (context) => const AdminDashboardScreen(),
+        '/admin/profile': (context) => const AdminProfileScreen(),
+        '/admin/profile/edit': (context) => const AdminEditProfileScreen(),
         '/admin/users': (context) => const AdminUserManageScreen(),
         '/admin/products': (context) => const AdminProductManageScreen(),
         '/admin/categories': (context) => const AdminCategoryManageScreen(),
