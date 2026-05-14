@@ -1,4 +1,8 @@
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+
 import '../theme/app_colors.dart';
 import '../widgets/admin_bottom_navigation_bar.dart';
 import 'AdminEditCategory.dart';
@@ -11,79 +15,20 @@ class AdminCategoryManageScreen extends StatefulWidget {
       _AdminCategoryManageScreenState();
 }
 
-class _AdminCategoryManageScreenState
-    extends State<AdminCategoryManageScreen> {
+class _AdminCategoryManageScreenState extends State<AdminCategoryManageScreen> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
+  String _searchQuery = '';
 
-  // Accent blue consistent with the rest of the admin screens
   static const Color _accentBlue = Color(0xFF4C6FFF);
-
-  final List<_Category> _allCategories = [
-    _Category(
-      name: 'Smartphones',
-      parent: 'ELECTRONICS',
-      itemCount: 45,
-      bgColor: Color(0xFFFDE8D8),
-      icon: Icons.smartphone,
-      iconColor: Color(0xFFE8845A),
-    ),
-    _Category(
-      name: 'Laptops',
-      parent: 'COMPUTING',
-      itemCount: 28,
-      bgColor: Color(0xFFEAEAF4),
-      icon: Icons.laptop_mac,
-      iconColor: Color(0xFF6B7280),
-    ),
-    _Category(
-      name: 'Tablets',
-      parent: 'ELECTRONICS',
-      itemCount: 12,
-      bgColor: Color(0xFFD8EDE8),
-      icon: Icons.tablet_mac,
-      iconColor: Color(0xFF4B8B7A),
-    ),
-    _Category(
-      name: 'Wearables',
-      parent: 'ACCESSORIES',
-      itemCount: 67,
-      bgColor: Color(0xFFF0F0F0),
-      icon: Icons.watch,
-      iconColor: Color(0xFF374151),
-    ),
-    _Category(
-      name: 'Audio',
-      parent: 'ELECTRONICS',
-      itemCount: 34,
-      bgColor: Color(0xFF1E1E1E),
-      icon: Icons.headphones,
-      iconColor: AppColors.white,
-    ),
-  ];
-
-  late List<_Category> _filteredCategories;
 
   @override
   void initState() {
     super.initState();
-    _filteredCategories = _allCategories;
-    _searchController.addListener(_filterCategories);
-  }
-
-  void _filterCategories() {
-    final query = _searchController.text.toLowerCase();
-    setState(() {
-      if (query.isEmpty) {
-        _filteredCategories = _allCategories;
-      } else {
-        _filteredCategories = _allCategories
-            .where(
-              (c) =>
-                  c.name.toLowerCase().contains(query) ||
-                  c.parent.toLowerCase().contains(query),
-            )
-            .toList();
-      }
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.trim().toLowerCase();
+      });
     });
   }
 
@@ -91,6 +36,44 @@ class _AdminCategoryManageScreenState
   void dispose() {
     _searchController.dispose();
     super.dispose();
+  }
+
+  Future<void> _deleteCategory(String categoryId, String categoryName) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Category'),
+        content: Text('Are you sure you want to delete "$categoryName"?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      await _db.collection('categories').doc(categoryId).delete();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Category deleted successfully')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error deleting category: $e')));
+    }
   }
 
   @override
@@ -140,7 +123,6 @@ class _AdminCategoryManageScreenState
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       child: Row(
         children: [
-          // Search field
           Expanded(
             child: Container(
               decoration: BoxDecoration(
@@ -158,7 +140,7 @@ class _AdminCategoryManageScreenState
                 controller: _searchController,
                 decoration: const InputDecoration(
                   prefixIcon: Icon(Icons.search, color: AppColors.grey400),
-                  hintText: 'Search categories, items...',
+                  hintText: 'Search categories by name or description',
                   hintStyle: TextStyle(color: AppColors.grey400, fontSize: 14),
                   border: InputBorder.none,
                   contentPadding: EdgeInsets.symmetric(vertical: 14),
@@ -167,10 +149,15 @@ class _AdminCategoryManageScreenState
             ),
           ),
           const SizedBox(width: 12),
-          // Add button
           GestureDetector(
-            onTap: () {
-              Navigator.pushNamed(context, '/admin/categories/add');
+            onTap: () async {
+              final result = await Navigator.pushNamed(
+                context,
+                '/admin/categories/add',
+              );
+              if (result == true) {
+                setState(() {});
+              }
             },
             child: Container(
               height: 48,
@@ -208,84 +195,145 @@ class _AdminCategoryManageScreenState
   }
 
   Widget _buildCategoryList() {
-    if (_filteredCategories.isEmpty) {
-      return const Center(
-        child: Text(
-          'No categories found',
-          style: TextStyle(
-            fontSize: 16,
-            color: AppColors.grey400,
-            fontWeight: FontWeight.w500,
-          ),
-        ),
-      );
-    }
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _db.collection('categories').snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text(
+              'Failed to load categories',
+              style: TextStyle(
+                fontSize: 16,
+                color: AppColors.grey400,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          );
+        }
 
-    return ListView.builder(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      itemCount: _filteredCategories.length,
-      itemBuilder: (context, index) {
-        return _CategoryCard(category: _filteredCategories[index]);
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation(AppColors.primary),
+            ),
+          );
+        }
+
+        final categories =
+            snapshot.data?.docs
+                .map((doc) => _CategoryRecord.fromDoc(doc.id, doc.data()))
+                .toList() ??
+            [];
+
+        categories.sort((a, b) => a.displayOrder.compareTo(b.displayOrder));
+
+        final filteredCategories = _searchQuery.isEmpty
+            ? categories
+            : categories
+                  .where((category) => category.matches(_searchQuery))
+                  .toList();
+
+        if (filteredCategories.isEmpty) {
+          return Center(
+            child: Text(
+              categories.isEmpty
+                  ? 'No categories found'
+                  : 'No matching categories found',
+              style: const TextStyle(
+                fontSize: 16,
+                color: AppColors.grey400,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+          itemCount: filteredCategories.length,
+          itemBuilder: (context, index) {
+            return _CategoryCard(
+              category: filteredCategories[index],
+              onEdit: () async {
+                final result = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => AdminEditCategory(
+                      categoryId: filteredCategories[index].id,
+                    ),
+                  ),
+                );
+                if (result == true) {
+                  setState(() {});
+                }
+              },
+              onDelete: () => _deleteCategory(
+                filteredCategories[index].id,
+                filteredCategories[index].name,
+              ),
+            );
+          },
+        );
       },
     );
   }
 }
 
-// ─── Data model ────────────────────────────────────────────────────────────────
-
-class _Category {
+class _CategoryRecord {
+  final String id;
   final String name;
-  final String parent;
-  final int itemCount;
-  final Color bgColor;
-  final IconData icon;
-  final Color iconColor;
+  final String description;
+  final String image;
+  final bool isActive;
+  final bool showOnHome;
+  final int displayOrder;
 
-  const _Category({
+  const _CategoryRecord({
+    required this.id,
     required this.name,
-    required this.parent,
-    required this.itemCount,
-    required this.bgColor,
-    required this.icon,
-    required this.iconColor,
+    required this.description,
+    required this.image,
+    required this.isActive,
+    required this.showOnHome,
+    required this.displayOrder,
   });
-}
 
-// ─── Category card ─────────────────────────────────────────────────────────────
-
-class _CategoryCard extends StatelessWidget {
-  final _Category category;
-
-  const _CategoryCard({Key? key, required this.category}) : super(key: key);
-
-  void _showDeleteConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete Category'),
-        content:
-            Text('Are you sure you want to delete "${category.name}"?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('"${category.name}" deleted')),
-              );
-            },
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: AppColors.danger),
-            ),
-          ),
-        ],
-      ),
+  factory _CategoryRecord.fromDoc(String id, Map<String, dynamic> data) {
+    return _CategoryRecord(
+      id: id,
+      name: data['name']?.toString() ?? '',
+      description: data['description']?.toString() ?? '',
+      image: data['image']?.toString() ?? '',
+      isActive: data['isActive'] as bool? ?? true,
+      showOnHome: data['showOnHome'] as bool? ?? false,
+      displayOrder: int.tryParse(data['displayOrder']?.toString() ?? '') ?? 0,
     );
   }
+
+  bool matches(String query) {
+    final text = [
+      name,
+      description,
+      image,
+      displayOrder.toString(),
+      isActive ? 'active' : 'inactive',
+      showOnHome ? 'show on home page' : 'hidden from home page',
+    ].join(' ').toLowerCase();
+    return text.contains(query);
+  }
+}
+
+class _CategoryCard extends StatelessWidget {
+  final _CategoryRecord category;
+  final VoidCallback onEdit;
+  final VoidCallback onDelete;
+
+  const _CategoryCard({
+    Key? key,
+    required this.category,
+    required this.onEdit,
+    required this.onDelete,
+  }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
@@ -307,29 +355,53 @@ class _CategoryCard extends StatelessWidget {
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.center,
         children: [
-          // Category image / icon placeholder
           Container(
             width: 72,
             height: 72,
             decoration: BoxDecoration(
-              color: category.bgColor,
+              color: AppColors.grey100,
               borderRadius: BorderRadius.circular(12),
             ),
-            child: Icon(
-              category.icon,
-              color: category.iconColor,
-              size: 34,
-            ),
+            child: category.image.isNotEmpty
+                ? ClipRRect(
+                    borderRadius: BorderRadius.circular(12),
+                    child: category.image.startsWith('http')
+                        ? Image.network(
+                            category.image,
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Icon(
+                                Icons.image_outlined,
+                                color: AppColors.grey500,
+                                size: 34,
+                              );
+                            },
+                          )
+                        : Image.file(
+                            File(category.image),
+                            fit: BoxFit.cover,
+                            errorBuilder: (context, error, stackTrace) {
+                              return const Icon(
+                                Icons.image_outlined,
+                                color: AppColors.grey500,
+                                size: 34,
+                              );
+                            },
+                          ),
+                  )
+                : const Icon(
+                    Icons.image_outlined,
+                    color: AppColors.grey500,
+                    size: 34,
+                  ),
           ),
           const SizedBox(width: 14),
-
-          // Name, parent, item count
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  category.name,
+                  category.name.isNotEmpty ? category.name : 'Unnamed Category',
                   style: const TextStyle(
                     fontSize: 15,
                     fontWeight: FontWeight.bold,
@@ -338,11 +410,15 @@ class _CategoryCard extends StatelessWidget {
                 ),
                 const SizedBox(height: 3),
                 Text(
-                  'PARENT: ${category.parent}',
+                  category.description.isNotEmpty
+                      ? category.description
+                      : 'No description',
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
                   style: const TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    letterSpacing: 0.4,
+                    letterSpacing: 0.2,
                     color: AppColors.grey500,
                   ),
                 ),
@@ -350,16 +426,34 @@ class _CategoryCard extends StatelessWidget {
                 Row(
                   children: [
                     const Icon(
-                      Icons.inbox_outlined,
+                      Icons.format_list_numbered,
                       size: 14,
                       color: AppColors.grey500,
                     ),
                     const SizedBox(width: 4),
                     Text(
-                      '${category.itemCount} items',
+                      'Order: ${category.displayOrder}',
                       style: const TextStyle(
                         fontSize: 13,
                         color: AppColors.grey500,
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Icon(
+                      Icons.circle,
+                      size: 8,
+                      color: category.isActive
+                          ? AppColors.success
+                          : AppColors.grey400,
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      category.isActive ? 'Active' : 'Inactive',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: category.isActive
+                            ? AppColors.success
+                            : AppColors.grey400,
                       ),
                     ),
                   ],
@@ -367,26 +461,11 @@ class _CategoryCard extends StatelessWidget {
               ],
             ),
           ),
-
-          // Edit & delete icons — horizontal
           Row(
             mainAxisSize: MainAxisSize.min,
             children: [
               GestureDetector(
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => AdminEditCategory(
-                        categoryName: category.name,
-                        description:
-                            '${category.name} category description.',
-                        showOnHome: false,
-                        activeStatus: true,
-                      ),
-                    ),
-                  );
-                },
+                onTap: onEdit,
                 child: const Icon(
                   Icons.edit_outlined,
                   color: AppColors.grey500,
@@ -395,7 +474,7 @@ class _CategoryCard extends StatelessWidget {
               ),
               const SizedBox(width: 12),
               GestureDetector(
-                onTap: () => _showDeleteConfirmation(context),
+                onTap: onDelete,
                 child: const Icon(
                   Icons.delete_outline,
                   color: AppColors.grey500,

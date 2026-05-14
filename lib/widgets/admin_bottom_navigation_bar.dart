@@ -6,7 +6,8 @@ class AdminBottomNavigationBar extends StatefulWidget {
   const AdminBottomNavigationBar({Key? key}) : super(key: key);
 
   @override
-  State<AdminBottomNavigationBar> createState() => _AdminBottomNavigationBarState();
+  State<AdminBottomNavigationBar> createState() =>
+      _AdminBottomNavigationBarState();
 }
 
 class _AdminBottomNavigationBarState extends State<AdminBottomNavigationBar> {
@@ -47,54 +48,60 @@ class _AdminBottomNavigationBarState extends State<AdminBottomNavigationBar> {
     final currentRoute = ModalRoute.of(context)?.settings.name;
     if (currentRoute == targetRoute) return;
 
-    AdminNavigationIndexService.setIndex(index);
-    setState(() {});
-
     // Use pushNamed (not pushReplacementNamed) so the back stack is preserved.
-    // The user can now press Back to return to the previously opened admin screen.
+    // The AdminNavigationRouteObserver will update the index via didPush.
     Navigator.pushNamed(context, targetRoute);
   }
 
   @override
   Widget build(BuildContext context) {
-    final currentIndex = AdminNavigationIndexService.currentIndex;
-    return Container(
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        border: Border(top: BorderSide(color: AppColors.grey300, width: 1)),
-      ),
-      padding: const EdgeInsets.symmetric(vertical: 6),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceAround,
-        children: List.generate(_items.length, (index) {
-          final item = _items[index];
-          final isSelected = index == currentIndex;
+    return ListenableBuilder(
+      listenable: AdminNavigationIndexService.instance,
+      builder: (context, _) {
+        final currentIndex = AdminNavigationIndexService.currentIndex;
+        return Container(
+          decoration: BoxDecoration(
+            color: AppColors.white,
+            border: Border(top: BorderSide(color: AppColors.grey300, width: 1)),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 6),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceAround,
+            children: List.generate(_items.length, (index) {
+              final item = _items[index];
+              final isSelected = index == currentIndex;
 
-          return GestureDetector(
-            onTap: () => _onTap(index),
-            behavior: HitTestBehavior.opaque,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  item.icon,
-                  size: 24,
-                  color: isSelected ? AppColors.primary : AppColors.grey400,
+              return GestureDetector(
+                onTap: () => _onTap(index),
+                behavior: HitTestBehavior.opaque,
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(
+                      item.icon,
+                      size: 24,
+                      color: isSelected ? AppColors.primary : AppColors.grey400,
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      item.label,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: isSelected
+                            ? FontWeight.w700
+                            : FontWeight.w500,
+                        color: isSelected
+                            ? AppColors.primary
+                            : AppColors.grey400,
+                      ),
+                    ),
+                  ],
                 ),
-                const SizedBox(height: 4),
-                Text(
-                  item.label,
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: isSelected ? FontWeight.w700 : FontWeight.w500,
-                    color: isSelected ? AppColors.primary : AppColors.grey400,
-                  ),
-                ),
-              ],
-            ),
-          );
-        }),
-      ),
+              );
+            }),
+          ),
+        );
+      },
     );
   }
 }

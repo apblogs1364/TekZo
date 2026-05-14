@@ -1,4 +1,10 @@
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+
 import '../theme/app_colors.dart';
 import '../widgets/admin_bottom_navigation_bar.dart';
 
@@ -11,21 +17,100 @@ class AdminAddCategory extends StatefulWidget {
 
 class _AdminAddCategoryState extends State<AdminAddCategory> {
   static const Color _accentBlue = Color(0xFF4C6FFF);
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  // Controllers
-  final TextEditingController _nameController =
-      TextEditingController(text: 'Smartphones');
-  final TextEditingController _descController =
-      TextEditingController(text: 'Latest generation mobile devices and accessories.');
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _descController = TextEditingController();
+  final TextEditingController _displayOrderController = TextEditingController();
 
+  File? _categoryImage;
   bool _showOnHome = false;
   bool _activeStatus = false;
+  bool _isSaving = false;
 
   @override
   void dispose() {
     _nameController.dispose();
     _descController.dispose();
+    _displayOrderController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickCategoryImage() async {
+    final pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (pickedFile != null) {
+      setState(() {
+        _categoryImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<String> _saveImageLocally(File imageFile) async {
+    if (!await imageFile.exists()) {
+      throw Exception('Image file does not exist');
+    }
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final imagesDir = Directory(
+      '${appDir.path}${Platform.pathSeparator}category_images',
+    );
+    if (!await imagesDir.exists()) {
+      await imagesDir.create(recursive: true);
+    }
+
+    final fileName = 'category_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final savedPath = '${imagesDir.path}${Platform.pathSeparator}$fileName';
+    final savedFile = await imageFile.copy(savedPath);
+    return savedFile.path;
+  }
+
+  Future<void> _saveCategory() async {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a category name')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      String imagePath = '';
+      if (_categoryImage != null) {
+        imagePath = await _saveImageLocally(_categoryImage!);
+      }
+
+      final displayOrder =
+          int.tryParse(_displayOrderController.text.trim()) ?? 0;
+      final docRef = _db.collection('categories').doc();
+
+      await docRef.set({
+        'name': _nameController.text.trim(),
+        'description': _descController.text.trim(),
+        'displayOrder': displayOrder,
+        'image': imagePath,
+        'isActive': _activeStatus,
+        'showOnHome': _showOnHome,
+        'createdAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Category saved successfully')),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error saving category: $e')));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
@@ -38,22 +123,19 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
             _buildAppBar(),
             Expanded(
               child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 20,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ── Icon section ────────────────────────────────────────
-                    _buildIconSection(),
+                    _buildImageSection(),
                     const SizedBox(height: 28),
-
-                    // ── Basic Information ───────────────────────────────────
                     _buildSectionTitle('BASIC INFORMATION'),
                     const SizedBox(height: 12),
                     _buildBasicInfoCard(),
                     const SizedBox(height: 24),
-
-                    // ── Display Settings ────────────────────────────────────
                     _buildSectionTitle('DISPLAY SETTINGS'),
                     const SizedBox(height: 12),
                     _buildDisplaySettingsCard(),
@@ -69,8 +151,6 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
     );
   }
 
-  // ── App Bar ──────────────────────────────────────────────────────────────────
-
   Widget _buildAppBar() {
     return Container(
       color: AppColors.white,
@@ -79,8 +159,7 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
         children: [
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
-            child:
-                const Icon(Icons.arrow_back, color: AppColors.grey600),
+            child: const Icon(Icons.arrow_back, color: AppColors.grey600),
           ),
           const SizedBox(width: 16),
           const Expanded(
@@ -95,33 +174,34 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
             ),
           ),
           ElevatedButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Category saved!')),
-              );
-              Navigator.pop(context);
-            },
+            onPressed: _isSaving ? null : _saveCategory,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.black,
               foregroundColor: AppColors.white,
               elevation: 0,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            child: const Text(
-              'Save',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(AppColors.white),
+                    ),
+                  )
+                : const Text(
+                    'Save',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
           ),
         ],
       ),
     );
   }
-
-  // ── Section title ────────────────────────────────────────────────────────────
 
   Widget _buildSectionTitle(String title) {
     return Text(
@@ -135,37 +215,34 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
     );
   }
 
-  // ── Icon section ─────────────────────────────────────────────────────────────
-
-  Widget _buildIconSection() {
+  Widget _buildImageSection() {
     return Center(
       child: Column(
         children: [
-          // Dashed circle with image placeholder
-          CustomPaint(
-            painter: _DashedCirclePainter(
-              color: const Color(0xFFB0B8C8),
-              strokeWidth: 1.5,
-              dashWidth: 6,
-              dashSpace: 5,
-            ),
+          GestureDetector(
+            onTap: _pickCategoryImage,
             child: Container(
               width: 110,
               height: 110,
-              decoration: const BoxDecoration(
-                color: Color(0xFFF0F2F8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F2F8),
                 shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFB0B8C8), width: 1.5),
               ),
-              child: const Icon(
-                Icons.image_outlined,
-                size: 38,
-                color: Color(0xFF9CA3AF),
+              child: ClipOval(
+                child: _categoryImage == null
+                    ? const Icon(
+                        Icons.image_outlined,
+                        size: 38,
+                        color: Color(0xFF9CA3AF),
+                      )
+                    : Image.file(_categoryImage!, fit: BoxFit.cover),
               ),
             ),
           ),
           const SizedBox(height: 14),
           const Text(
-            'Category Icon',
+            'Category Image',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
@@ -175,42 +252,28 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
           const SizedBox(height: 4),
           const Text(
             'Recommended size 512×512 PNG',
-            style: TextStyle(
-              fontSize: 12,
-              color: Color(0xFF9CA3AF),
-            ),
+            style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
           ),
           const SizedBox(height: 14),
           OutlinedButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Icon picker coming soon')),
-              );
-            },
+            onPressed: _pickCategoryImage,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.black,
-              side:
-                  const BorderSide(color: Color(0xFFD1D5DB), width: 1.2),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              side: const BorderSide(color: Color(0xFFD1D5DB), width: 1.2),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
             child: const Text(
-              'Change Icon',
-              style: TextStyle(
-                fontSize: 14,
-                fontWeight: FontWeight.w500,
-              ),
+              'Change Image',
+              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
           ),
         ],
       ),
     );
   }
-
-  // ── Basic Information card ───────────────────────────────────────────────────
 
   Widget _buildBasicInfoCard() {
     return Container(
@@ -223,24 +286,29 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Category Name
           _buildLabel('Category Name'),
-          _buildTextField(controller: _nameController, hint: 'e.g. Smartphones'),
+          _buildTextField(
+            controller: _nameController,
+            hint: 'e.g. Smartphones',
+          ),
           const SizedBox(height: 16),
-
-          // Description
           _buildLabel('Description'),
           _buildTextField(
             controller: _descController,
             hint: 'Write a brief description...',
             maxLines: 3,
           ),
+          const SizedBox(height: 16),
+          _buildLabel('Display Order'),
+          _buildTextField(
+            controller: _displayOrderController,
+            hint: '0',
+            keyboardType: TextInputType.number,
+          ),
         ],
       ),
     );
   }
-
-  // ── Display Settings card ────────────────────────────────────────────────────
 
   Widget _buildDisplaySettingsCard() {
     return Container(
@@ -252,7 +320,6 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
       ),
       child: Column(
         children: [
-          // Show on Home Page
           _buildToggleRow(
             title: 'Show on Home Page',
             subtitle: 'Feature this category in the main discovery grid',
@@ -263,7 +330,6 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Divider(height: 1, color: Color(0xFFE5E7EB)),
           ),
-          // Active Status
           _buildToggleRow(
             title: 'Active Status',
             subtitle: 'Enable or disable category visibility',
@@ -274,8 +340,6 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
       ),
     );
   }
-
-  // ── Helpers ──────────────────────────────────────────────────────────────────
 
   Widget _buildLabel(String text) {
     return Padding(
@@ -295,8 +359,7 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
     required TextEditingController controller,
     String? hint,
     int maxLines = 1,
-    Widget? suffixIcon,
-    bool readOnly = false,
+    TextInputType keyboardType = TextInputType.text,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -306,7 +369,7 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
       child: TextField(
         controller: controller,
         maxLines: maxLines,
-        readOnly: readOnly,
+        keyboardType: keyboardType,
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w500,
@@ -314,21 +377,16 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
         ),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(
-            fontSize: 14,
-            color: Color(0xFF9CA3AF),
-          ),
+          hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF9CA3AF)),
           border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          suffixIcon: suffixIcon,
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 12,
+          ),
         ),
       ),
     );
   }
-
-
-
 
   Widget _buildToggleRow({
     required String title,
@@ -354,10 +412,7 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF9CA3AF),
-                ),
+                style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
               ),
             ],
           ),
@@ -374,54 +429,4 @@ class _AdminAddCategoryState extends State<AdminAddCategory> {
       ],
     );
   }
-}
-
-// ── Dashed circle painter ─────────────────────────────────────────────────────
-
-class _DashedCirclePainter extends CustomPainter {
-  final Color color;
-  final double strokeWidth;
-  final double dashWidth;
-  final double dashSpace;
-
-  const _DashedCirclePainter({
-    required this.color,
-    required this.strokeWidth,
-    required this.dashWidth,
-    required this.dashSpace,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    final circumference = 2 * 3.14159265 * radius;
-    final dashCount =
-        (circumference / (dashWidth + dashSpace)).floor();
-    final actualDash = circumference / dashCount;
-    final dashAngle = (actualDash * dashWidth / (dashWidth + dashSpace)) /
-        radius;
-    final gapAngle = (actualDash * dashSpace / (dashWidth + dashSpace)) /
-        radius;
-
-    double startAngle = -3.14159265 / 2;
-    for (int i = 0; i < dashCount; i++) {
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        startAngle,
-        dashAngle,
-        false,
-        paint,
-      );
-      startAngle += dashAngle + gapAngle;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

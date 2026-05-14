@@ -19,15 +19,17 @@ import 'package:tekzo/observers/admin_navigation_route_observer.dart';
 import 'package:tekzo/screens/AdminProductManageScreen.dart';
 import 'package:tekzo/screens/AdminCategoryManageScreen.dart';
 import 'package:tekzo/screens/AdminAddCategory.dart';
-import 'package:tekzo/screens/AdminEditProduct.dart';
 import 'package:tekzo/screens/AdminOrderManageScreen.dart';
 import 'package:tekzo/screens/AdminOrderDetailScreen.dart';
 import 'package:tekzo/screens/AdminReviewManageScreen.dart';
-import 'package:tekzo/screens/AdminEditReviewScreen.dart';
+import 'package:tekzo/screens/AdminReviewDetailsScreen.dart';
 import 'package:tekzo/screens/AdminConfigScreen.dart';
 import 'package:tekzo/screens/AdminCustomerCareScreen.dart';
 import 'package:tekzo/screens/AdminProfileScreen.dart';
 import 'package:tekzo/screens/AdminEditProfileScreen.dart';
+import 'package:tekzo/screens/MaintenanceScreen.dart';
+import 'package:tekzo/services/app_config_service.dart';
+import 'package:tekzo/services/admin_navigation_index_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -35,63 +37,152 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+  final AppConfigData config;
+
+  const MyApp({super.key, required this.config});
+
+  Route<dynamic>? _buildRoute(RouteSettings settings) {
+    final isAdminRoute = settings.name?.startsWith('/admin') ?? false;
+
+    if (config.maintenanceMode && !isAdminRoute) {
+      return MaterialPageRoute(
+        settings: settings,
+        builder: (_) => const MaintenanceScreen(),
+      );
+    }
+
+    switch (settings.name) {
+      case '/splash':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const SplashScreen(),
+        );
+      case '/home':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const HomeScreen(),
+        );
+      case '/login':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const LoginScreen(),
+        );
+      case '/register':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const RegisterScreen(),
+        );
+      case '/products':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const ProductScreen(),
+        );
+      case '/product-detail':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const ProductDetailScreen(),
+        );
+      case '/cart':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const CartScreen(),
+        );
+      case '/profile':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const ProfileScreen(),
+        );
+      case '/wishlist':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const WishlistScreen(),
+        );
+      case '/orders':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const OrderScreen(),
+        );
+      case '/admin':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminDashboardScreen(),
+        );
+      case '/admin/profile':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminProfileScreen(),
+        );
+      case '/admin/profile/edit':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminEditProfileScreen(),
+        );
+      case '/admin/users':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminUserManageScreen(),
+        );
+      case '/admin/products':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminProductManageScreen(),
+        );
+      case '/admin/categories':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminCategoryManageScreen(),
+        );
+      case '/admin/categories/add':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminAddCategory(),
+        );
+      case '/admin/orders':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminOrderManageScreen(),
+        );
+      case '/admin/reviews':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminReviewManageScreen(),
+        );
+      case '/admin/config':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminConfigScreen(),
+        );
+      case '/admin/customer-care':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminCustomerCareScreen(),
+        );
+      case '/admin/reviews/edit':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminReviewDetailsScreen(reviewId: ''),
+        );
+      case '/admin/orders/detail':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const AdminOrderDetailScreen(orderDocId: ''),
+        );
+      default:
+        return null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Tekzo',
+      title: config.appName,
       home: const SplashScreen(),
       navigatorObservers: [
         NavigationRouteObserver(),
         AdminNavigationRouteObserver(),
       ],
-      routes: {
-        '/splash': (context) => const SplashScreen(),
-        '/home': (context) => const HomeScreen(),
-        '/login': (context) => const LoginScreen(),
-        '/register': (context) => const RegisterScreen(),
-        '/products': (context) => const ProductScreen(),
-        '/product-detail': (context) => const ProductDetailScreen(),
-        '/cart': (context) => const CartScreen(),
-        '/profile': (context) => const ProfileScreen(),
-        '/wishlist': (context) => const WishlistScreen(),
-        '/orders': (context) => const OrderScreen(),
-        '/admin': (context) => const AdminDashboardScreen(),
-        '/admin/profile': (context) => const AdminProfileScreen(),
-        '/admin/profile/edit': (context) => const AdminEditProfileScreen(),
-        '/admin/users': (context) => const AdminUserManageScreen(),
-        '/admin/products': (context) => const AdminProductManageScreen(),
-        '/admin/categories': (context) => const AdminCategoryManageScreen(),
-        '/admin/categories/add': (context) => const AdminAddCategory(),
-        '/admin/products/edit': (context) =>
-            const AdminEditProduct(productName: '', sku: ''),
-        '/admin/orders': (context) => const AdminOrderManageScreen(),
-        '/admin/reviews': (context) => const AdminReviewManageScreen(),
-        '/admin/config': (context) => const AdminConfigScreen(),
-        '/admin/customer-care': (context) => const AdminCustomerCareScreen(),
-        '/admin/reviews/edit': (context) => const AdminEditReviewScreen(
-          customerName: '',
-          customerEmail: '',
-          productName: '',
-          sku: '',
-          rating: 5,
-          reviewText: '',
-          status: 'Published',
-          avatarColor: Color(0xFF5B8EA6),
-          avatarInitials: '',
-        ),
-        '/admin/orders/detail': (context) => const AdminOrderDetailScreen(
-          orderId: '',
-          orderDate: '',
-          customerName: '',
-          status: 'Pending',
-          totalAmount: '',
-          avatarColor: Color(0xFF5B8EA6),
-          avatarInitials: '',
-        ),
-      },
+      onGenerateRoute: _buildRoute,
     );
   }
 }
@@ -107,7 +198,20 @@ class MyAppWrapper extends StatelessWidget {
       ),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.done) {
-          return const MyApp();
+          return StreamBuilder<AppConfigData>(
+            stream: AppConfigService.configStream(),
+            builder: (context, configSnapshot) {
+              return MyApp(
+                config:
+                    configSnapshot.data ??
+                    const AppConfigData(
+                      appName: AppConfigService.defaultAppName,
+                      maintenanceMode: false,
+                      logoPath: '',
+                    ),
+              );
+            },
+          );
         }
         return const MaterialApp(
           home: Scaffold(body: Center(child: CircularProgressIndicator())),

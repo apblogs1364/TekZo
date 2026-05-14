@@ -1,21 +1,18 @@
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+
 import '../theme/app_colors.dart';
 import '../widgets/admin_bottom_navigation_bar.dart';
 
 class AdminEditCategory extends StatefulWidget {
-  /// Existing category data passed in from the manage screen.
-  final String categoryName;
-  final String description;
-  final bool showOnHome;
-  final bool activeStatus;
+  final String categoryId;
 
-  const AdminEditCategory({
-    Key? key,
-    required this.categoryName,
-    required this.description,
-    this.showOnHome = false,
-    this.activeStatus = true,
-  }) : super(key: key);
+  const AdminEditCategory({Key? key, required this.categoryId})
+    : super(key: key);
 
   @override
   State<AdminEditCategory> createState() => _AdminEditCategoryState();
@@ -23,27 +20,190 @@ class AdminEditCategory extends StatefulWidget {
 
 class _AdminEditCategoryState extends State<AdminEditCategory> {
   static const Color _accentBlue = Color(0xFF4C6FFF);
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
-  late final TextEditingController _nameController;
-  late final TextEditingController _descController;
+  final TextEditingController _nameController = TextEditingController();
+  final TextEditingController _descController = TextEditingController();
+  final TextEditingController _displayOrderController = TextEditingController();
 
-  late bool _showOnHome;
-  late bool _activeStatus;
+  File? _categoryImage;
+  String _existingImagePath = '';
+  bool _showOnHome = false;
+  bool _activeStatus = true;
+  bool _isLoading = true;
+  bool _isSaving = false;
+  Map<String, dynamic>? _categoryData;
 
   @override
   void initState() {
     super.initState();
-    _nameController = TextEditingController(text: widget.categoryName);
-    _descController = TextEditingController(text: widget.description);
-    _showOnHome = widget.showOnHome;
-    _activeStatus = widget.activeStatus;
+    _fetchCategoryData();
+  }
+
+  Future<void> _fetchCategoryData() async {
+    try {
+      final doc = await _db
+          .collection('categories')
+          .doc(widget.categoryId)
+          .get();
+      if (doc.exists) {
+        _categoryData = doc.data();
+        _nameController.text = _categoryData?['name']?.toString() ?? '';
+        _descController.text = _categoryData?['description']?.toString() ?? '';
+        _displayOrderController.text =
+            _categoryData?['displayOrder']?.toString() ?? '0';
+        _existingImagePath = _categoryData?['image']?.toString() ?? '';
+        _showOnHome = _categoryData?['showOnHome'] as bool? ?? false;
+        _activeStatus = _categoryData?['isActive'] as bool? ?? true;
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading category: $e')));
+      }
+    } finally {
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _descController.dispose();
+    _displayOrderController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickCategoryImage() async {
+    final pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+    if (pickedFile != null) {
+      setState(() {
+        _categoryImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<String> _saveImageLocally(File imageFile) async {
+    if (!await imageFile.exists()) {
+      throw Exception('Image file does not exist');
+    }
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final imagesDir = Directory(
+      '${appDir.path}${Platform.pathSeparator}category_images',
+    );
+    if (!await imagesDir.exists()) {
+      await imagesDir.create(recursive: true);
+    }
+
+    final fileName = 'category_${DateTime.now().millisecondsSinceEpoch}.jpg';
+    final savedPath = '${imagesDir.path}${Platform.pathSeparator}$fileName';
+    final savedFile = await imageFile.copy(savedPath);
+    return savedFile.path;
+  }
+
+  Future<void> _updateCategory() async {
+    if (_nameController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please enter a category name')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      String imagePath = _existingImagePath;
+      if (_categoryImage != null) {
+        imagePath = await _saveImageLocally(_categoryImage!);
+      }
+
+      final displayOrder =
+          int.tryParse(_displayOrderController.text.trim()) ?? 0;
+
+      await _db.collection('categories').doc(widget.categoryId).update({
+        'name': _nameController.text.trim(),
+        'description': _descController.text.trim(),
+        'displayOrder': displayOrder,
+        'image': imagePath,
+        'isActive': _activeStatus,
+        'showOnHome': _showOnHome,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Category updated successfully')),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating category: $e')));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  Future<void> _deleteCategory() async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Delete Category'),
+        content: Text(
+          'Are you sure you want to delete ${_nameController.text.trim()}?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'Delete',
+              style: TextStyle(color: AppColors.danger),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    try {
+      if (_existingImagePath.isNotEmpty &&
+          !_existingImagePath.startsWith('http')) {
+        final file = File(_existingImagePath);
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+
+      if (_categoryImage != null) {
+        final file = _categoryImage!;
+        if (await file.exists()) {
+          await file.delete();
+        }
+      }
+
+      await _db.collection('categories').doc(widget.categoryId).delete();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Category deleted successfully')),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error deleting category: $e')));
+    }
   }
 
   @override
@@ -51,43 +211,46 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildAppBar(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // ── Icon section ─────────────────────────────────────────
-                    _buildIconSection(),
-                    const SizedBox(height: 28),
-
-                    // ── Basic Information ────────────────────────────────────
-                    _buildSectionTitle('BASIC INFORMATION'),
-                    const SizedBox(height: 12),
-                    _buildBasicInfoCard(),
-                    const SizedBox(height: 24),
-
-                    // ── Display Settings ─────────────────────────────────────
-                    _buildSectionTitle('DISPLAY SETTINGS'),
-                    const SizedBox(height: 12),
-                    _buildDisplaySettingsCard(),
-                    const SizedBox(height: 30),
-                  ],
+        child: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation(AppColors.primary),
                 ),
+              )
+            : Column(
+                children: [
+                  _buildAppBar(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 20,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildImageSection(),
+                          const SizedBox(height: 28),
+                          _buildSectionTitle('BASIC INFORMATION'),
+                          const SizedBox(height: 12),
+                          _buildBasicInfoCard(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('DISPLAY SETTINGS'),
+                          const SizedBox(height: 12),
+                          _buildDisplaySettingsCard(),
+                          const SizedBox(height: 24),
+                          _buildDeleteSection(),
+                          const SizedBox(height: 30),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const AdminBottomNavigationBar(),
+                ],
               ),
-            ),
-            const AdminBottomNavigationBar(),
-          ],
-        ),
       ),
     );
   }
-
-  // ── App Bar ──────────────────────────────────────────────────────────────────
 
   Widget _buildAppBar() {
     return Container(
@@ -112,33 +275,34 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
             ),
           ),
           ElevatedButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Category updated!')),
-              );
-              Navigator.pop(context);
-            },
+            onPressed: _isSaving ? null : _updateCategory,
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.black,
               foregroundColor: AppColors.white,
               elevation: 0,
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 10),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
-            child: const Text(
-              'Save',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(AppColors.white),
+                    ),
+                  )
+                : const Text(
+                    'Save',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
           ),
         ],
       ),
     );
   }
-
-  // ── Section title ────────────────────────────────────────────────────────────
 
   Widget _buildSectionTitle(String title) {
     return Text(
@@ -152,36 +316,58 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
     );
   }
 
-  // ── Icon section ─────────────────────────────────────────────────────────────
-
-  Widget _buildIconSection() {
+  Widget _buildImageSection() {
     return Center(
       child: Column(
         children: [
-          CustomPaint(
-            painter: _DashedCirclePainter(
-              color: const Color(0xFFB0B8C8),
-              strokeWidth: 1.5,
-              dashWidth: 6,
-              dashSpace: 5,
-            ),
+          GestureDetector(
+            onTap: _pickCategoryImage,
             child: Container(
               width: 110,
               height: 110,
-              decoration: const BoxDecoration(
-                color: Color(0xFFF0F2F8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFF0F2F8),
                 shape: BoxShape.circle,
+                border: Border.all(color: const Color(0xFFB0B8C8), width: 1.5),
               ),
-              child: const Icon(
-                Icons.image_outlined,
-                size: 38,
-                color: Color(0xFF9CA3AF),
+              child: ClipOval(
+                child: _categoryImage != null
+                    ? Image.file(_categoryImage!, fit: BoxFit.cover)
+                    : _existingImagePath.isNotEmpty
+                    ? (_existingImagePath.startsWith('http')
+                          ? Image.network(
+                              _existingImagePath,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(
+                                  Icons.image_outlined,
+                                  size: 38,
+                                  color: Color(0xFF9CA3AF),
+                                );
+                              },
+                            )
+                          : Image.file(
+                              File(_existingImagePath),
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return const Icon(
+                                  Icons.image_outlined,
+                                  size: 38,
+                                  color: Color(0xFF9CA3AF),
+                                );
+                              },
+                            ))
+                    : const Icon(
+                        Icons.image_outlined,
+                        size: 38,
+                        color: Color(0xFF9CA3AF),
+                      ),
               ),
             ),
           ),
           const SizedBox(height: 14),
           const Text(
-            'Category Icon',
+            'Category Image',
             style: TextStyle(
               fontSize: 15,
               fontWeight: FontWeight.bold,
@@ -191,29 +377,21 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
           const SizedBox(height: 4),
           const Text(
             'Recommended size 512×512 PNG',
-            style: TextStyle(
-              fontSize: 12,
-              color: Color(0xFF9CA3AF),
-            ),
+            style: TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
           ),
           const SizedBox(height: 14),
           OutlinedButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Icon picker coming soon')),
-              );
-            },
+            onPressed: _pickCategoryImage,
             style: OutlinedButton.styleFrom(
               foregroundColor: AppColors.black,
               side: const BorderSide(color: Color(0xFFD1D5DB), width: 1.2),
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
               shape: RoundedRectangleBorder(
                 borderRadius: BorderRadius.circular(10),
               ),
             ),
             child: const Text(
-              'Change Icon',
+              'Change Image',
               style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
             ),
           ),
@@ -221,8 +399,6 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
       ),
     );
   }
-
-  // ── Basic Information card ───────────────────────────────────────────────────
 
   Widget _buildBasicInfoCard() {
     return Container(
@@ -247,12 +423,17 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
             hint: 'Write a brief description...',
             maxLines: 3,
           ),
+          const SizedBox(height: 16),
+          _buildLabel('Display Order'),
+          _buildTextField(
+            controller: _displayOrderController,
+            hint: '0',
+            keyboardType: TextInputType.number,
+          ),
         ],
       ),
     );
   }
-
-  // ── Display Settings card ────────────────────────────────────────────────────
 
   Widget _buildDisplaySettingsCard() {
     return Container(
@@ -285,7 +466,53 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
     );
   }
 
-  // ── Helpers ──────────────────────────────────────────────────────────────────
+  Widget _buildDeleteSection() {
+    return GestureDetector(
+      onTap: _deleteCategory,
+      child: Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 16),
+        decoration: BoxDecoration(
+          color: const Color(0xFFFEE2E2),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFFECACA)),
+        ),
+        child: Column(
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(
+                  Icons.delete_outline,
+                  color: Color(0xFFDC2626),
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                const Text(
+                  'Delete Category',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: Color(0xFFDC2626),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'This action cannot be undone.',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.grey400,
+                fontWeight: FontWeight.w400,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 
   Widget _buildLabel(String text) {
     return Padding(
@@ -305,6 +532,7 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
     required TextEditingController controller,
     String? hint,
     int maxLines = 1,
+    TextInputType keyboardType = TextInputType.text,
   }) {
     return Container(
       decoration: BoxDecoration(
@@ -314,6 +542,7 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
       child: TextField(
         controller: controller,
         maxLines: maxLines,
+        keyboardType: keyboardType,
         style: const TextStyle(
           fontSize: 14,
           fontWeight: FontWeight.w500,
@@ -321,13 +550,12 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
         ),
         decoration: InputDecoration(
           hintText: hint,
-          hintStyle: const TextStyle(
-            fontSize: 14,
-            color: Color(0xFF9CA3AF),
-          ),
+          hintStyle: const TextStyle(fontSize: 14, color: Color(0xFF9CA3AF)),
           border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 14,
+            vertical: 12,
+          ),
         ),
       ),
     );
@@ -357,10 +585,7 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
               const SizedBox(height: 4),
               Text(
                 subtitle,
-                style: const TextStyle(
-                  fontSize: 12,
-                  color: Color(0xFF9CA3AF),
-                ),
+                style: const TextStyle(fontSize: 12, color: Color(0xFF9CA3AF)),
               ),
             ],
           ),
@@ -377,53 +602,4 @@ class _AdminEditCategoryState extends State<AdminEditCategory> {
       ],
     );
   }
-}
-
-// ── Dashed circle painter ─────────────────────────────────────────────────────
-
-class _DashedCirclePainter extends CustomPainter {
-  final Color color;
-  final double strokeWidth;
-  final double dashWidth;
-  final double dashSpace;
-
-  const _DashedCirclePainter({
-    required this.color,
-    required this.strokeWidth,
-    required this.dashWidth,
-    required this.dashSpace,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
-
-    final center = Offset(size.width / 2, size.height / 2);
-    final radius = size.width / 2;
-    final circumference = 2 * 3.14159265 * radius;
-    final dashCount = (circumference / (dashWidth + dashSpace)).floor();
-    final actualDash = circumference / dashCount;
-    final dashAngle =
-        (actualDash * dashWidth / (dashWidth + dashSpace)) / radius;
-    final gapAngle =
-        (actualDash * dashSpace / (dashWidth + dashSpace)) / radius;
-
-    double startAngle = -3.14159265 / 2;
-    for (int i = 0; i < dashCount; i++) {
-      canvas.drawArc(
-        Rect.fromCircle(center: center, radius: radius),
-        startAngle,
-        dashAngle,
-        false,
-        paint,
-      );
-      startAngle += dashAngle + gapAngle;
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

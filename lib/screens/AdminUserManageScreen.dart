@@ -1,7 +1,11 @@
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+
 import '../theme/app_colors.dart';
 import '../widgets/admin_bottom_navigation_bar.dart';
-import 'AdminEditUser.dart';
+import 'AdminUserDetailsScreen.dart';
 
 class AdminUserManageScreen extends StatefulWidget {
   const AdminUserManageScreen({Key? key}) : super(key: key);
@@ -11,58 +15,17 @@ class AdminUserManageScreen extends StatefulWidget {
 }
 
 class _AdminUserManageScreenState extends State<AdminUserManageScreen> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
-
-  final List<_User> _allUsers = [
-    _User(
-      name: 'Aarav Sharma',
-      email: 'aarav.s@tekzo.com',
-      role: 'ADMIN',
-      isActive: true,
-    ),
-    _User(
-      name: 'Rohan Gupta',
-      email: 'rohan.g@tekzo.com',
-      role: 'EDITOR',
-      isActive: true,
-    ),
-    _User(
-      name: 'Priya Patel',
-      email: 'priya.p@tekzo.com',
-      role: 'CUSTOMER',
-      isActive: false,
-    ),
-    _User(
-      name: 'Vikram Singh',
-      email: 'vikram.s@tekzo.com',
-      role: 'ADMIN',
-      isActive: true,
-    ),
-  ];
-
-  late List<_User> _filteredUsers;
+  String _searchQuery = '';
 
   @override
   void initState() {
     super.initState();
-    _filteredUsers = _allUsers;
-    _searchController.addListener(_filterUsers);
-  }
-
-  void _filterUsers() {
-    final query = _searchController.text.toLowerCase();
-    setState(() {
-      if (query.isEmpty) {
-        _filteredUsers = _allUsers;
-      } else {
-        _filteredUsers = _allUsers
-            .where(
-              (user) =>
-                  user.name.toLowerCase().contains(query) ||
-                  user.email.toLowerCase().contains(query),
-            )
-            .toList();
-      }
+    _searchController.addListener(() {
+      setState(() {
+        _searchQuery = _searchController.text.trim().toLowerCase();
+      });
     });
   }
 
@@ -89,7 +52,6 @@ class _AdminUserManageScreenState extends State<AdminUserManageScreen> {
     );
   }
 
-  // Header with back button and add user button
   Widget _buildHeader() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -110,20 +72,11 @@ class _AdminUserManageScreenState extends State<AdminUserManageScreen> {
               ),
             ),
           ),
-          // GestureDetector(
-          //   onTap: () {
-          //     ScaffoldMessenger.of(context).showSnackBar(
-          //       const SnackBar(content: Text('Add user feature coming soon')),
-          //     );
-          //   },
-          //   child: const Icon(Icons.person_add_alt_1, color: AppColors.primary),
-          // ),
         ],
       ),
     );
   }
 
-  // Search bar with filtering
   Widget _buildSearchBar() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -137,7 +90,7 @@ class _AdminUserManageScreenState extends State<AdminUserManageScreen> {
           controller: _searchController,
           decoration: const InputDecoration(
             icon: Icon(Icons.search, color: AppColors.grey400),
-            hintText: 'Find users by name or email',
+            hintText: 'Search by name, email, phone, role, or location',
             hintStyle: TextStyle(color: AppColors.grey400),
             border: InputBorder.none,
           ),
@@ -146,57 +99,180 @@ class _AdminUserManageScreenState extends State<AdminUserManageScreen> {
     );
   }
 
-  // User list with filtered results
   Widget _buildUserList() {
-    return _filteredUsers.isEmpty
-        ? Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Text(
-                  'No users found',
-                  style: TextStyle(
-                    fontSize: 16,
-                    color: AppColors.grey400,
-                    fontWeight: FontWeight.w500,
-                  ),
-                ),
-              ],
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _db.collection('users').snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Center(
+            child: Text(
+              'Failed to load users',
+              style: TextStyle(
+                fontSize: 16,
+                color: AppColors.grey400,
+                fontWeight: FontWeight.w500,
+              ),
             ),
-          )
-        : ListView.builder(
-            padding: const EdgeInsets.all(16),
-            itemCount: _filteredUsers.length,
-            itemBuilder: (context, index) {
-              return _UserCard(user: _filteredUsers[index]);
-            },
           );
+        }
+
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(
+              valueColor: AlwaysStoppedAnimation(AppColors.primary),
+            ),
+          );
+        }
+
+        final users =
+            snapshot.data?.docs
+                .map((doc) => _UserRecord.fromDoc(doc.id, doc.data()))
+                .toList() ??
+            [];
+
+        users.sort(
+          (a, b) => (b.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0))
+              .compareTo(a.createdAt ?? DateTime.fromMillisecondsSinceEpoch(0)),
+        );
+
+        final filteredUsers = _searchQuery.isEmpty
+            ? users
+            : users.where((user) => user.matches(_searchQuery)).toList();
+
+        if (filteredUsers.isEmpty) {
+          return Center(
+            child: Text(
+              users.isEmpty ? 'No users found' : 'No matching users found',
+              style: TextStyle(
+                fontSize: 16,
+                color: AppColors.grey400,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          padding: const EdgeInsets.all(16),
+          itemCount: filteredUsers.length,
+          itemBuilder: (context, index) {
+            final user = filteredUsers[index];
+            return _UserCard(
+              user: user,
+              onView: () async {
+                await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) =>
+                        AdminUserDetailsScreen(userId: user.id),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
   }
 }
 
-// User Model
-class _User {
-  final String name;
+class _UserRecord {
+  final String id;
+  final String firstName;
+  final String lastName;
   final String email;
+  final String phone;
+  final String gender;
+  final String dob;
+  final String location;
+  final String password;
+  final String profileImageUrl;
   final String role;
   final bool isActive;
+  final DateTime? createdAt;
 
-  _User({
-    required this.name,
+  const _UserRecord({
+    required this.id,
+    required this.firstName,
+    required this.lastName,
     required this.email,
+    required this.phone,
+    required this.gender,
+    required this.dob,
+    required this.location,
+    required this.password,
+    required this.profileImageUrl,
     required this.role,
     required this.isActive,
+    required this.createdAt,
   });
+
+  factory _UserRecord.fromDoc(String id, Map<String, dynamic> data) {
+    return _UserRecord(
+      id: id,
+      firstName: data['firstName']?.toString() ?? '',
+      lastName: data['lastName']?.toString() ?? '',
+      email: data['email']?.toString() ?? '',
+      phone: data['phone']?.toString() ?? '',
+      gender: data['gender']?.toString() ?? '',
+      dob: data['dob']?.toString() ?? '',
+      location: data['location']?.toString() ?? '',
+      password: data['password']?.toString() ?? '',
+      profileImageUrl: data['profileImageUrl']?.toString() ?? '',
+      role: data['role']?.toString().isNotEmpty == true
+          ? data['role'].toString()
+          : 'customer',
+      isActive: data['isActive'] as bool? ?? true,
+      createdAt: _parseCreatedAt(data['createdAt']),
+    );
+  }
+
+  String get fullName => '$firstName $lastName'.trim();
+
+  String get searchText => [
+    firstName,
+    lastName,
+    fullName,
+    email,
+    phone,
+    gender,
+    dob,
+    location,
+    role,
+    isActive ? 'active' : 'inactive',
+  ].join(' ').toLowerCase();
+
+  bool matches(String query) => searchText.contains(query);
+
+  String get initials {
+    if (fullName.isEmpty) return 'U';
+    final parts = fullName.split(' ').where((part) => part.isNotEmpty).toList();
+    if (parts.isEmpty) return 'U';
+    if (parts.length == 1) {
+      return parts.first
+          .substring(0, parts.first.length.clamp(1, 2))
+          .toUpperCase();
+    }
+    return '${parts.first.substring(0, 1)}${parts.last.substring(0, 1)}'
+        .toUpperCase();
+  }
+
+  static DateTime? _parseCreatedAt(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String && value.isNotEmpty) return DateTime.tryParse(value);
+    return null;
+  }
 }
 
-// User Card UI with edit and delete actions
 class _UserCard extends StatelessWidget {
-  final _User user;
+  final _UserRecord user;
+  final VoidCallback onView;
 
-  const _UserCard({Key? key, required this.user}) : super(key: key);
+  const _UserCard({required this.user, required this.onView});
 
   Color _getRoleColor() {
-    switch (user.role) {
+    switch (user.role.toUpperCase()) {
       case 'ADMIN':
         return AppColors.primary;
       case 'EDITOR':
@@ -204,77 +280,6 @@ class _UserCard extends StatelessWidget {
       default:
         return AppColors.grey400;
     }
-  }
-
-  void _showUserOptions(BuildContext context) {
-    showModalBottomSheet(
-      context: context,
-      builder: (context) => Container(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.edit, color: AppColors.primary),
-              title: const Text('Edit User'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => AdminEditUser(
-                      userName: user.name,
-                      userEmail: user.email,
-                      userRole: user.role,
-                      isActive: user.isActive,
-                    ),
-                  ),
-                );
-              },
-            ),
-            ListTile(
-              leading: const Icon(Icons.delete, color: AppColors.danger),
-              title: const Text(
-                'Delete User',
-                style: TextStyle(color: AppColors.danger),
-              ),
-              onTap: () {
-                Navigator.pop(context);
-                _showDeleteConfirmation(context);
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  void _showDeleteConfirmation(BuildContext context) {
-    showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Delete User'),
-        content: Text('Are you sure you want to delete ${user.name}?'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text('Cancel'),
-          ),
-          TextButton(
-            onPressed: () {
-              Navigator.pop(context);
-              ScaffoldMessenger.of(
-                context,
-              ).showSnackBar(SnackBar(content: Text('${user.name} deleted')));
-            },
-            child: const Text(
-              'Delete',
-              style: TextStyle(color: AppColors.danger),
-            ),
-          ),
-        ],
-      ),
-    );
   }
 
   @override
@@ -298,33 +303,26 @@ class _UserCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              // Avatar
-              CircleAvatar(
-                radius: 22,
-                backgroundColor: AppColors.grey200,
-                child: Text(
-                  user.name.substring(0, 2).toUpperCase(),
-                  style: const TextStyle(
-                    color: AppColors.black,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
+              _buildAvatar(),
               const SizedBox(width: 12),
-
-              // Name + Email + Role
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Row(
                       children: [
-                        Text(
-                          user.name,
-                          style: const TextStyle(
-                            fontWeight: FontWeight.w600,
-                            fontSize: 14,
-                            color: AppColors.black,
+                        Expanded(
+                          child: Text(
+                            user.fullName.isNotEmpty
+                                ? user.fullName
+                                : 'Unnamed User',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                              color: AppColors.black,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
                         ),
                         const SizedBox(width: 8),
@@ -338,7 +336,7 @@ class _UserCard extends StatelessWidget {
                             borderRadius: BorderRadius.circular(8),
                           ),
                           child: Text(
-                            user.role,
+                            user.role.toUpperCase(),
                             style: TextStyle(
                               fontSize: 10,
                               fontWeight: FontWeight.w600,
@@ -350,7 +348,7 @@ class _UserCard extends StatelessWidget {
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      user.email,
+                      user.email.isNotEmpty ? user.email : 'No email',
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.grey500,
@@ -359,46 +357,21 @@ class _UserCard extends StatelessWidget {
                   ],
                 ),
               ),
-
-              // Action Buttons
-              Row(
-                children: [
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (context) => AdminEditUser(
-                            userName: user.name,
-                            userEmail: user.email,
-                            userRole: user.role,
-                            isActive: user.isActive,
-                          ),
-                        ),
-                      );
-                    },
-                    child: const Icon(
-                      Icons.edit,
-                      size: 20,
-                      color: AppColors.grey500,
-                    ),
+              TextButton.icon(
+                onPressed: onView,
+                icon: const Icon(Icons.visibility_outlined, size: 18),
+                label: const Text('View'),
+                style: TextButton.styleFrom(
+                  foregroundColor: AppColors.primary,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
                   ),
-                  const SizedBox(width: 10),
-                  GestureDetector(
-                    onTap: () => _showDeleteConfirmation(context),
-                    child: const Icon(
-                      Icons.delete_outline,
-                      size: 20,
-                      color: AppColors.grey500,
-                    ),
-                  ),
-                ],
+                ),
               ),
             ],
           ),
           const SizedBox(height: 10),
-
-          // Status Indicator
           Row(
             children: [
               Icon(
@@ -415,10 +388,104 @@ class _UserCard extends StatelessWidget {
                   fontWeight: FontWeight.w500,
                 ),
               ),
+              const Spacer(),
+              Text(
+                user.phone.isNotEmpty ? user.phone : 'No phone',
+                style: const TextStyle(fontSize: 12, color: AppColors.grey500),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Text(
+                  user.location.isNotEmpty ? user.location : 'No location',
+                  style: const TextStyle(
+                    fontSize: 12,
+                    color: AppColors.grey500,
+                  ),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Text(
+                user.createdAt == null ? 'N/A' : _formatDate(user.createdAt!),
+                style: const TextStyle(fontSize: 12, color: AppColors.grey400),
+              ),
             ],
           ),
         ],
       ),
     );
+  }
+
+  Widget _buildAvatar() {
+    final imagePath = user.profileImageUrl.trim();
+    if (imagePath.isNotEmpty) {
+      if (imagePath.startsWith('http')) {
+        return ClipOval(
+          child: Image.network(
+            imagePath,
+            width: 44,
+            height: 44,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) =>
+                _buildFallbackAvatar(),
+          ),
+        );
+      }
+
+      final file = File(imagePath);
+      if (file.existsSync()) {
+        return ClipOval(
+          child: Image.file(
+            file,
+            width: 44,
+            height: 44,
+            fit: BoxFit.cover,
+            errorBuilder: (context, error, stackTrace) =>
+                _buildFallbackAvatar(),
+          ),
+        );
+      }
+    }
+
+    return _buildFallbackAvatar();
+  }
+
+  Widget _buildFallbackAvatar() {
+    return CircleAvatar(
+      radius: 22,
+      backgroundColor: AppColors.grey200,
+      child: Text(
+        user.initials,
+        style: const TextStyle(
+          color: AppColors.black,
+          fontWeight: FontWeight.w600,
+        ),
+      ),
+    );
+  }
+
+  static String _formatDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final day = date.day.toString().padLeft(2, '0');
+    final month = months[date.month - 1];
+    return '$day $month ${date.year}';
   }
 }

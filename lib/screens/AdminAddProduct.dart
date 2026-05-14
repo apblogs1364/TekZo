@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
-// import 'dart:math';
-import 'dart:ui';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+
 import '../theme/app_colors.dart';
 import '../widgets/admin_bottom_navigation_bar.dart';
 
@@ -12,7 +15,224 @@ class AdminAddProduct extends StatefulWidget {
 }
 
 class _AdminAddProductState extends State<AdminAddProduct> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
   final Color accentBlue = const Color(0xFF4C6FFF);
+
+  // Form Controllers
+  late TextEditingController nameController;
+  late TextEditingController brandController;
+  late TextEditingController descriptionController;
+  late TextEditingController shortDescriptionController;
+  late TextEditingController priceController;
+  late TextEditingController discountPercentageController;
+  late TextEditingController stockController;
+  late TextEditingController colorController;
+  late TextEditingController ratingController;
+  late TextEditingController totalReviewsController;
+
+  String? selectedCategoryId;
+  List<Map<String, String>> categories = [];
+  File? _productImage;
+  bool isFeatured = false;
+  bool isActive = true;
+  List<Map<String, String>> specifications = [];
+  bool _isSaving = false;
+
+  @override
+  void initState() {
+    super.initState();
+    nameController = TextEditingController();
+    brandController = TextEditingController();
+    descriptionController = TextEditingController();
+    shortDescriptionController = TextEditingController();
+    priceController = TextEditingController();
+    discountPercentageController = TextEditingController();
+    stockController = TextEditingController();
+    colorController = TextEditingController();
+    ratingController = TextEditingController();
+    totalReviewsController = TextEditingController();
+    _fetchCategories();
+  }
+
+  Future<void> _fetchCategories() async {
+    try {
+      final snapshot = await _db.collection('categories').get();
+      setState(() {
+        categories = snapshot.docs.map((doc) {
+          return {'id': doc.id, 'name': doc['name']?.toString() ?? 'Unknown'};
+        }).toList();
+      });
+    } catch (e) {
+      print('Error fetching categories: $e');
+    }
+  }
+
+  Future<void> _pickProductImage() async {
+    final pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (pickedFile != null) {
+      setState(() {
+        _productImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<String> _saveImageLocally(File imageFile) async {
+    try {
+      if (!await imageFile.exists()) {
+        throw Exception('Image file does not exist');
+      }
+
+      final appDir = await getApplicationDocumentsDirectory();
+      final imagesDir = Directory(
+        '${appDir.path}${Platform.pathSeparator}product_images',
+      );
+      if (!await imagesDir.exists()) {
+        await imagesDir.create(recursive: true);
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'product_$timestamp.jpg';
+      final savedPath = '${imagesDir.path}${Platform.pathSeparator}$fileName';
+
+      final savedFile = await imageFile.copy(savedPath);
+      print('Image saved locally: ${savedFile.path}');
+      return savedFile.path;
+    } catch (e) {
+      print('Local save error: $e');
+      rethrow;
+    }
+  }
+
+  void _addSpecificationRow() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final fieldController = TextEditingController();
+        final valueController = TextEditingController();
+        return AlertDialog(
+          title: const Text('Add Specification'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: fieldController,
+                decoration: const InputDecoration(labelText: 'Field Name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: valueController,
+                decoration: const InputDecoration(labelText: 'Value'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (fieldController.text.isNotEmpty &&
+                    valueController.text.isNotEmpty) {
+                  setState(() {
+                    specifications.add({
+                      'field': fieldController.text,
+                      'value': valueController.text,
+                    });
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _saveProduct() async {
+    if (nameController.text.isEmpty ||
+        priceController.text.isEmpty ||
+        selectedCategoryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill all required fields')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      String productImageUrl = '';
+      if (_productImage != null) {
+        productImageUrl = await _saveImageLocally(_productImage!);
+      }
+
+      final finalPrice =
+          int.parse(priceController.text) -
+          (int.parse(priceController.text) *
+              (int.tryParse(discountPercentageController.text) ?? 0) ~/
+              100);
+
+      final specMap = <String, String>{};
+      for (var spec in specifications) {
+        specMap[spec['field']!] = spec['value']!;
+      }
+
+      await _db.collection('products').add({
+        'name': nameController.text,
+        'brand': brandController.text,
+        'description': descriptionController.text,
+        'shortDescription': shortDescriptionController.text,
+        'price': int.parse(priceController.text),
+        'finalPrice': finalPrice,
+        'discountPercentage':
+            int.tryParse(discountPercentageController.text) ?? 0,
+        'stock': int.tryParse(stockController.text) ?? 0,
+        'color': colorController.text,
+        'categoryId': selectedCategoryId,
+        'rating': double.tryParse(ratingController.text) ?? 0.0,
+        'totalReviews': int.tryParse(totalReviewsController.text) ?? 0,
+        'productImage': productImageUrl,
+        'isFeatured': isFeatured,
+        'isActive': isActive,
+        'specifications': specMap,
+        'createdAt': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Product added successfully')),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    nameController.dispose();
+    brandController.dispose();
+    descriptionController.dispose();
+    shortDescriptionController.dispose();
+    priceController.dispose();
+    discountPercentageController.dispose();
+    stockController.dispose();
+    colorController.dispose();
+    ratingController.dispose();
+    totalReviewsController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -24,11 +244,14 @@ class _AdminAddProductState extends State<AdminAddProduct> {
             _buildAppBar(),
             Expanded(
               child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 20,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    _buildSectionTitle('PRODUCT IMAGES'),
+                    _buildSectionTitle('PRODUCT IMAGE'),
                     const SizedBox(height: 12),
                     _buildImageSection(),
                     const SizedBox(height: 24),
@@ -40,6 +263,8 @@ class _AdminAddProductState extends State<AdminAddProduct> {
                     const SizedBox(height: 12),
                     _buildPricingInventorySection(),
                     const SizedBox(height: 24),
+                    _buildSectionTitle('SPECIFICATIONS'),
+                    const SizedBox(height: 12),
                     _buildSpecificationsSection(),
                     const SizedBox(height: 30),
                   ],
@@ -60,14 +285,13 @@ class _AdminAddProductState extends State<AdminAddProduct> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: () => Navigator.pop(context),
             child: const Icon(Icons.arrow_back, color: AppColors.grey600),
           ),
           const SizedBox(width: 16),
           const Expanded(
             child: Text(
               'Add Product',
-              textAlign: TextAlign.start,
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -76,9 +300,7 @@ class _AdminAddProductState extends State<AdminAddProduct> {
             ),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(context);
-            },
+            onPressed: _isSaving ? null : _saveProduct,
             style: ElevatedButton.styleFrom(
               backgroundColor: accentBlue,
               foregroundColor: AppColors.white,
@@ -88,10 +310,19 @@ class _AdminAddProductState extends State<AdminAddProduct> {
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: const Text(
-              'Save',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(AppColors.white),
+                    ),
+                  )
+                : const Text(
+                    'Save',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
           ),
         ],
       ),
@@ -111,360 +342,235 @@ class _AdminAddProductState extends State<AdminAddProduct> {
   }
 
   Widget _buildImageSection() {
-    return Row(
-      children: [
-        // Add Image Button
-        CustomPaint(
-          painter: _DashedRectPainter(color: const Color(0xFF9CA3AF), strokeWidth: 1.5, dashSpace: 5, dashWidth: 5),
-          child: Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: AppColors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(Icons.add_photo_alternate_outlined, color: const Color(0xFF88A4E8), size: 28),
-                const SizedBox(height: 6),
-                const Text(
-                  'Add Image',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF88A4E8),
-                  ),
+    return GestureDetector(
+      onTap: _pickProductImage,
+      child: Container(
+        height: 120,
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E7EB), width: 2),
+        ),
+        child: _productImage == null
+            ? Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.add_photo_alternate_outlined,
+                      color: accentBlue,
+                      size: 32,
+                    ),
+                    const SizedBox(height: 8),
+                    const Text(
+                      'Tap to add product image',
+                      style: TextStyle(color: AppColors.grey600, fontSize: 12),
+                    ),
+                  ],
                 ),
-              ],
-            ),
-          ),
-        ),
-        const SizedBox(width: 12),
-        // Image 1
-        _buildImageThumbnail(Icons.headphones, true),
-        const SizedBox(width: 12),
-        // Image 2
-        _buildImageThumbnail(Icons.watch, false),
-      ],
-    );
-  }
-
-  Widget _buildImageThumbnail(IconData icon, bool hasDelete) {
-    return Stack(
-      children: [
-        Container(
-          width: 100,
-          height: 100,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E), // Dark background matching design
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.grey200.withOpacity(0.5),
-                blurRadius: 6,
-                offset: const Offset(0, 3),
+              )
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.file(_productImage!, fit: BoxFit.cover),
               ),
-            ],
-          ),
-          child: Center(
-            child: Icon(icon, color: AppColors.white, size: 48),
-          ),
-        ),
-        if (hasDelete)
-          Positioned(
-            top: 6,
-            right: 6,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.close, color: AppColors.white, size: 14),
-            ),
-          ),
-      ],
+      ),
     );
   }
 
   Widget _buildBasicInfoSection() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildLabel('Product Name'),
-          _buildTextField(hint: 'e.g. Tekzo Pro Buds 2'),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Category'),
-                    _buildDropdownField('Audio'),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Brand'),
-                    _buildTextField(hint: 'Tekzo'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildLabel('Description'),
-          _buildTextField(
-            hint: 'Write a brief product description...',
-            maxLines: 4,
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        _buildTextField('Product Name*', nameController),
+        const SizedBox(height: 12),
+        _buildTextField('Brand', brandController),
+        const SizedBox(height: 12),
+        _buildCategoryDropdown(),
+        const SizedBox(height: 12),
+        _buildTextField('Color', colorController),
+        const SizedBox(height: 12),
+        _buildTextField('Short Description', shortDescriptionController),
+        const SizedBox(height: 12),
+        _buildTextField('Description', descriptionController, maxLines: 3),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Checkbox(
+              value: isFeatured,
+              onChanged: (value) => setState(() => isFeatured = value ?? false),
+            ),
+            const Text('Featured Product'),
+          ],
+        ),
+      ],
     );
   }
 
   Widget _buildPricingInventorySection() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Price'),
-                    _buildTextField(hint: '₹ 0.00'),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Discount Price'),
-                    _buildTextField(hint: '₹ Optional'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('SKU'),
-                    _buildTextField(
-                      hint: 'TKZ-001',
-                      suffixIcon: const Icon(Icons.qr_code_scanner, color: Color(0xFF9CA3AF), size: 18),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Stock Quantity'),
-                    _buildTextField(hint: '0'),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        _buildTextField(
+          'Price*',
+          priceController,
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          'Discount %',
+          discountPercentageController,
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          'Stock Quantity',
+          stockController,
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          'Rating',
+          ratingController,
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          'Total Reviews',
+          totalReviewsController,
+          keyboardType: TextInputType.number,
+        ),
+      ],
     );
   }
 
   Widget _buildSpecificationsSection() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildSectionTitle('SPECIFICATIONS'),
-            GestureDetector(
-              onTap: () {},
-              child: Text(
-                '+ Add Row',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: accentBlue,
-                ),
-              ),
+        ...specifications.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final spec = entry.value;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildTextField(hint: 'Display'),
-              const SizedBox(height: 12),
-              _buildTextField(hint: 'Processor'),
-            ],
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        spec['field']!,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        spec['value']!,
+                        style: const TextStyle(
+                          color: AppColors.grey600,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => setState(() => specifications.removeAt(idx)),
+                  child: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.danger,
+                    size: 18,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _addSpecificationRow,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: accentBlue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: accentBlue),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add, color: accentBlue, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  'Add Specification',
+                  style: TextStyle(color: accentBlue, fontSize: 12),
+                ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  Widget _buildLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF9CA3AF),
+  Widget _buildTextField(
+    String label,
+    TextEditingController controller, {
+    TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      maxLines: maxLines,
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
         ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: accentBlue, width: 2),
+        ),
+        filled: true,
+        fillColor: AppColors.white,
       ),
     );
   }
 
-  Widget _buildTextField({String? hint, int maxLines = 1, Widget? suffixIcon}) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: TextField(
-        maxLines: maxLines,
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF4B5563),
-          ),
-          border: InputBorder.none,
-          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          suffixIcon: suffixIcon,
-        ),
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          color: AppColors.black,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDropdownField(String value) {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: value,
-          isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down, color: Color(0xFF9CA3AF), size: 20),
-          items: [
-            DropdownMenuItem(
-              value: value,
-              child: Text(
-                value,
-                style: const TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.black, // Color(0xFF4B5563)
-                ),
-              ),
+  Widget _buildCategoryDropdown() {
+    return DropdownButtonFormField<String>(
+      value: selectedCategoryId,
+      hint: const Text('Select Category*'),
+      items: categories
+          .map(
+            (cat) => DropdownMenuItem(
+              value: cat['id'],
+              child: Text(cat['name'] ?? 'Unknown'),
             ),
-          ],
-          onChanged: (val) {},
+          )
+          .toList(),
+      onChanged: (value) => setState(() => selectedCategoryId = value),
+      decoration: InputDecoration(
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
         ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: accentBlue, width: 2),
+        ),
+        filled: true,
+        fillColor: AppColors.white,
       ),
     );
-  }
-}
-
-class _DashedRectPainter extends CustomPainter {
-  final Color color;
-  final double strokeWidth;
-  final double dashWidth;
-  final double dashSpace;
-
-  _DashedRectPainter({
-    required this.color,
-    required this.strokeWidth,
-    required this.dashWidth,
-    required this.dashSpace,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
-
-    final RRect rrect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      const Radius.circular(12),
-    );
-
-    Path path = Path()..addRRect(rrect);
-
-    PathMetrics pathMetrics = path.computeMetrics();
-    for (PathMetric pathMetric in pathMetrics) {
-      double distance = 0.0;
-      bool draw = true;
-      while (distance < pathMetric.length) {
-        double len = draw ? dashWidth : dashSpace;
-        if (draw) {
-          canvas.drawPath(
-            pathMetric.extractPath(distance, distance + len),
-            paint,
-          );
-        }
-        distance += len;
-        draw = !draw;
-      }
-    }
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) {
-    return false;
   }
 }

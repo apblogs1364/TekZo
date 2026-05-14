@@ -1,90 +1,136 @@
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+
 import '../theme/app_colors.dart';
 import '../widgets/admin_bottom_navigation_bar.dart';
 
 class AdminOrderDetailScreen extends StatefulWidget {
-  final String orderId;
-  final String orderDate;
-  final String customerName;
-  final String status;
-  final String totalAmount;
-  final Color avatarColor;
-  final String avatarInitials;
+  final String orderDocId;
 
-  const AdminOrderDetailScreen({
-    Key? key,
-    required this.orderId,
-    required this.orderDate,
-    required this.customerName,
-    required this.status,
-    required this.totalAmount,
-    required this.avatarColor,
-    required this.avatarInitials,
-  }) : super(key: key);
+  const AdminOrderDetailScreen({Key? key, required this.orderDocId})
+    : super(key: key);
 
   @override
-  State<AdminOrderDetailScreen> createState() =>
-      _AdminOrderDetailScreenState();
+  State<AdminOrderDetailScreen> createState() => _AdminOrderDetailScreenState();
 }
 
 class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
   static const Color _accentBlue = Color(0xFF4C6FFF);
-  late String _currentStatus;
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  bool _isLoading = true;
+  bool _isSavingStatus = false;
+  Map<String, dynamic>? _orderData;
+  Map<String, dynamic>? _userData;
+  List<_OrderItemRecord> _items = [];
+  String _currentStatus = 'Pending';
 
   final List<String> _statusOptions = [
     'Pending',
     'Processing',
     'Shipped',
     'Delivered',
-  ];
-
-  // Step definitions for progress tracker
-  static const List<Map<String, dynamic>> _steps = [
-    {'label': 'Placed',     'icon': Icons.check_circle_outline},
-    {'label': 'Confirmed',  'icon': Icons.verified_outlined},
-    {'label': 'Processing', 'icon': Icons.sync},
-    {'label': 'Shipped',    'icon': Icons.local_shipping_outlined},
-    {'label': 'Delivered',  'icon': Icons.inventory_2_outlined},
+    'Cancelled',
+    'Returned',
   ];
 
   @override
   void initState() {
     super.initState();
-    _currentStatus = widget.status;
+    _loadOrder();
   }
 
-  /// Returns which step index is "active" (current) based on status
-  int get _activeStep {
-    switch (_currentStatus) {
-      case 'Pending':     return 0;
-      case 'Processing':  return 2;
-      case 'Shipped':     return 3;
-      case 'Delivered':   return 4;
-      default:            return 0;
+  Future<void> _loadOrder() async {
+    try {
+      final orderDoc = await _db
+          .collection('orders')
+          .doc(widget.orderDocId)
+          .get();
+      final orderData = orderDoc.data();
+      if (orderData == null) {
+        throw Exception('Order not found');
+      }
+
+      final userId = orderData['userId']?.toString() ?? '';
+      final userDoc = userId.isEmpty
+          ? null
+          : await _db.collection('users').doc(userId).get();
+
+      final itemsSnapshot = await orderDoc.reference.collection('items').get();
+      final items = await Future.wait(
+        itemsSnapshot.docs.map((itemDoc) async {
+          final itemData = itemDoc.data();
+          final productId = itemData['productId']?.toString() ?? '';
+          final productDoc = productId.isEmpty
+              ? null
+              : await _db.collection('products').doc(productId).get();
+          return _OrderItemRecord.fromSources(
+            itemDoc.id,
+            itemData,
+            productDoc?.data(),
+          );
+        }),
+      );
+
+      if (mounted) {
+        setState(() {
+          _orderData = orderData;
+          _userData = userDoc?.data();
+          _items = items;
+          _currentStatus = _normalizeStatus(
+            orderData['orderStatus']?.toString() ?? 'Pending',
+          );
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => _isLoading = false);
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error loading order: $e')));
+      }
     }
   }
 
-  /// Steps with index < _activeStep are "done"; == _activeStep is "active"
-  bool _isDone(int idx)   => idx < _activeStep;
-  bool _isActive(int idx) => idx == _activeStep;
-
-  Color get _statusBadgeBg {
-    switch (_currentStatus) {
-      case 'Processing': return const Color(0xFFEEF2FF);
-      case 'Shipped':    return const Color(0xFFDCFCE7);
-      case 'Pending':    return const Color(0xFFFFF7ED);
-      case 'Delivered':  return const Color(0xFFF0FDF4);
-      default:           return AppColors.grey100;
-    }
+  String _normalizeStatus(String value) {
+    final status = value.trim();
+    if (status.isEmpty) return 'Pending';
+    final normalized =
+        status[0].toUpperCase() + status.substring(1).toLowerCase();
+    return _statusOptions.contains(normalized) ? normalized : 'Pending';
   }
 
-  Color get _statusBadgeColor {
-    switch (_currentStatus) {
-      case 'Processing': return _accentBlue;
-      case 'Shipped':    return AppColors.success;
-      case 'Pending':    return AppColors.warning;
-      case 'Delivered':  return const Color(0xFF16A34A);
-      default:           return AppColors.grey500;
+  Future<void> _updateStatus(String status) async {
+    if (status == _currentStatus) return;
+    setState(() {
+      _currentStatus = status;
+      _isSavingStatus = true;
+    });
+
+    try {
+      await _db.collection('orders').doc(widget.orderDocId).update({
+        'orderStatus': status,
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Order status updated')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error updating status: $e')));
+      setState(() {
+        _currentStatus = _normalizeStatus(
+          _orderData?['orderStatus']?.toString() ?? 'Pending',
+        );
+      });
+    } finally {
+      if (mounted) setState(() => _isSavingStatus = false);
     }
   }
 
@@ -93,38 +139,46 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
     return Scaffold(
       backgroundColor: AppColors.grey50,
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildHeader(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
-                child: Column(
-                  children: [
-                    _buildProgressCard(),
-                    const SizedBox(height: 14),
-                    _buildCustomerInfoCard(),
-                    const SizedBox(height: 14),
-                    _buildOrderItemsCard(),
-                    const SizedBox(height: 14),
-                    _buildPaymentSummaryCard(),
-                    const SizedBox(height: 14),
-                    _buildUpdateStatusCard(),
-                    const SizedBox(height: 8),
-                  ],
+        child: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation(AppColors.primary),
                 ),
+              )
+            : Column(
+                children: [
+                  _buildHeader(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+                      child: Column(
+                        children: [
+                          _buildProgressCard(),
+                          const SizedBox(height: 14),
+                          _buildCustomerInfoCard(),
+                          const SizedBox(height: 14),
+                          _buildOrderItemsCard(),
+                          const SizedBox(height: 14),
+                          _buildPaymentSummaryCard(),
+                          const SizedBox(height: 14),
+                          _buildUpdateStatusCard(),
+                          const SizedBox(height: 8),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const AdminBottomNavigationBar(),
+                ],
               ),
-            ),
-            const AdminBottomNavigationBar(),
-          ],
-        ),
       ),
     );
   }
 
-  // ── Header ─────────────────────────────────────────────────────────────────
-
   Widget _buildHeader() {
+    final orderNumber =
+        _orderData?['orderNumber']?.toString() ?? widget.orderDocId;
+    final createdAt = _formatDate(_parseDateTime(_orderData?['createdAt']));
+
     return Container(
       color: AppColors.white,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
@@ -132,7 +186,11 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
         children: [
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
-            child: const Icon(Icons.arrow_back, color: AppColors.black, size: 22),
+            child: const Icon(
+              Icons.arrow_back,
+              color: AppColors.black,
+              size: 22,
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -140,7 +198,7 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'Order ${widget.orderId}',
+                  'Order $orderNumber',
                   style: const TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
@@ -148,7 +206,7 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
                   ),
                 ),
                 Text(
-                  'Placed on ${widget.orderDate}',
+                  'Placed on $createdAt',
                   style: const TextStyle(
                     fontSize: 11,
                     color: AppColors.grey400,
@@ -158,7 +216,6 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
               ],
             ),
           ),
-          // Status badge
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 5),
             decoration: BoxDecoration(
@@ -180,8 +237,6 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
     );
   }
 
-  // ── Order Progress ──────────────────────────────────────────────────────────
-
   Widget _buildProgressCard() {
     return _card(
       child: Column(
@@ -200,9 +255,10 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
           Row(
             children: List.generate(_steps.length * 2 - 1, (i) {
               if (i.isOdd) {
-                // Connector line
-                final stepIdx = i ~/ 2; // line between stepIdx and stepIdx+1
-                final lineActive = _isDone(stepIdx) && (_isDone(stepIdx + 1) || _isActive(stepIdx + 1));
+                final stepIdx = i ~/ 2;
+                final lineActive =
+                    _isDone(stepIdx) &&
+                    (_isDone(stepIdx + 1) || _isActive(stepIdx + 1));
                 return Expanded(
                   child: Container(
                     height: 3,
@@ -212,14 +268,12 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
                     ),
                   ),
                 );
-              } else {
-                final idx = i ~/ 2;
-                return _buildStepNode(idx);
               }
+              final idx = i ~/ 2;
+              return _buildStepNode(idx);
             }),
           ),
           const SizedBox(height: 8),
-          // Labels row
           Row(
             children: List.generate(_steps.length * 2 - 1, (i) {
               if (i.isOdd) return const Expanded(child: SizedBox());
@@ -227,7 +281,7 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
               return SizedBox(
                 width: 52,
                 child: Text(
-                  _steps[idx]['label'],
+                  _steps[idx]['label'] as String,
                   textAlign: TextAlign.center,
                   style: TextStyle(
                     fontSize: 9,
@@ -246,18 +300,11 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
   }
 
   Widget _buildStepNode(int idx) {
-    final done   = _isDone(idx);
+    final done = _isDone(idx);
     final active = _isActive(idx);
+    final bg = (done || active) ? _accentBlue : AppColors.grey200;
 
-    final bg   = (done || active) ? _accentBlue : AppColors.grey200;
-    final iconColor = AppColors.white;
-
-    IconData iconData;
-    if (done) {
-      iconData = Icons.check;
-    } else {
-      iconData = _steps[idx]['icon'] as IconData;
-    }
+    final iconData = done ? Icons.check : _steps[idx]['icon'] as IconData;
 
     return Container(
       width: 36,
@@ -275,13 +322,16 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
               ]
             : [],
       ),
-      child: Icon(iconData, color: iconColor, size: 16),
+      child: Icon(iconData, color: AppColors.white, size: 16),
     );
   }
 
-  // ── Customer Information ────────────────────────────────────────────────────
-
   Widget _buildCustomerInfoCard() {
+    final name = _customerName();
+    final email = _customerEmail();
+    final phone = _customerPhone();
+    final address = _customerAddress();
+
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -301,11 +351,9 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
             ],
           ),
           const SizedBox(height: 16),
-
-          // Name
           _infoLabel('Name'),
           Text(
-            widget.customerName,
+            name,
             style: const TextStyle(
               fontSize: 14,
               fontWeight: FontWeight.bold,
@@ -313,8 +361,6 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
             ),
           ),
           const SizedBox(height: 12),
-
-          // Email + Phone side by side
           Row(
             children: [
               Expanded(
@@ -323,7 +369,7 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
                   children: [
                     _infoLabel('Email'),
                     Text(
-                      _emailFor(widget.customerName),
+                      email,
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.black,
@@ -339,7 +385,7 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
                   children: [
                     _infoLabel('Phone'),
                     Text(
-                      '+91 98765 43210',
+                      phone,
                       style: const TextStyle(
                         fontSize: 12,
                         color: AppColors.black,
@@ -352,12 +398,10 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
             ],
           ),
           const SizedBox(height: 12),
-
-          // Shipping Address
           _infoLabel('Shipping Address'),
-          const Text(
-            '123 MG Road, Indiranagar,\nBengaluru, Karnataka 560038, India',
-            style: TextStyle(
+          Text(
+            address,
+            style: const TextStyle(
               fontSize: 12,
               color: AppColors.black,
               fontWeight: FontWeight.w500,
@@ -369,8 +413,6 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
     );
   }
 
-  // ── Order Items ─────────────────────────────────────────────────────────────
-
   Widget _buildOrderItemsCard() {
     return _card(
       child: Column(
@@ -378,7 +420,11 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
         children: [
           Row(
             children: [
-              const Icon(Icons.inventory_2_outlined, color: _accentBlue, size: 20),
+              const Icon(
+                Icons.inventory_2_outlined,
+                color: _accentBlue,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'Order Items',
@@ -391,51 +437,47 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          _buildOrderItem(
-            icon: Icons.headphones,
-            name: 'Tekzo Pro Buds Max',
-            variant: 'Midnight Black · Qty: 1',
-            price: '₹24,999.00',
-          ),
-          const Padding(
-            padding: EdgeInsets.symmetric(vertical: 10),
-            child: Divider(height: 1, color: Color(0xFFF3F4F6)),
-          ),
-          _buildOrderItem(
-            icon: Icons.watch,
-            name: 'Tekzo Smart Watch Pro',
-            variant: 'Silver Titanium · Qty: 1',
-            price: '₹19,999.00',
-          ),
+          if (_items.isEmpty)
+            const Text(
+              'No items found',
+              style: TextStyle(
+                fontSize: 12,
+                color: AppColors.grey400,
+                fontWeight: FontWeight.w500,
+              ),
+            )
+          else
+            Column(
+              children: List.generate(_items.length, (index) {
+                final item = _items[index];
+                return Column(
+                  children: [
+                    _buildOrderItem(item: item),
+                    if (index != _items.length - 1)
+                      const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 10),
+                        child: Divider(height: 1, color: Color(0xFFF3F4F6)),
+                      ),
+                  ],
+                );
+              }),
+            ),
         ],
       ),
     );
   }
 
-  Widget _buildOrderItem({
-    required IconData icon,
-    required String name,
-    required String variant,
-    required String price,
-  }) {
+  Widget _buildOrderItem({required _OrderItemRecord item}) {
     return Row(
       children: [
-        Container(
-          width: 56,
-          height: 56,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Icon(icon, color: AppColors.white, size: 28),
-        ),
+        _buildItemImage(item.productImage),
         const SizedBox(width: 12),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                name,
+                item.productName.isNotEmpty ? item.productName : item.productId,
                 style: const TextStyle(
                   fontSize: 13,
                   fontWeight: FontWeight.bold,
@@ -444,7 +486,7 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
               ),
               const SizedBox(height: 3),
               Text(
-                variant,
+                'Qty: ${item.quantity}',
                 style: const TextStyle(
                   fontSize: 11,
                   color: AppColors.grey400,
@@ -455,7 +497,7 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
           ),
         ),
         Text(
-          price,
+          _formatCurrency(item.lineTotal),
           style: const TextStyle(
             fontSize: 13,
             fontWeight: FontWeight.bold,
@@ -466,16 +508,85 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
     );
   }
 
-  // ── Payment Summary ─────────────────────────────────────────────────────────
+  Widget _buildItemImage(String imagePath) {
+    final placeholder = Container(
+      width: 56,
+      height: 56,
+      decoration: BoxDecoration(
+        color: const Color(0xFFF8FAFC),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.grey200),
+      ),
+      child: const Icon(
+        Icons.image_outlined,
+        color: AppColors.grey400,
+        size: 24,
+      ),
+    );
+
+    final normalizedPath = _normalizeImagePath(imagePath);
+    if (normalizedPath.isEmpty) return placeholder;
+
+    if (normalizedPath.startsWith('http')) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(10),
+        child: Image.network(
+          normalizedPath,
+          width: 56,
+          height: 56,
+          fit: BoxFit.cover,
+          alignment: Alignment.center,
+          errorBuilder: (_, __, ___) => placeholder,
+        ),
+      );
+    }
+
+    final file = File(normalizedPath);
+    if (!file.existsSync()) return placeholder;
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: Image.file(
+        file,
+        width: 56,
+        height: 56,
+        fit: BoxFit.cover,
+        alignment: Alignment.center,
+        gaplessPlayback: true,
+        errorBuilder: (_, __, ___) => placeholder,
+      ),
+    );
+  }
+
+  String _normalizeImagePath(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty) return '';
+    if (trimmed.startsWith('file://')) {
+      return Uri.parse(trimmed).toFilePath();
+    }
+    if (trimmed.startsWith('file:/')) {
+      return Uri.parse(trimmed).toFilePath();
+    }
+    return trimmed;
+  }
 
   Widget _buildPaymentSummaryCard() {
+    final subtotal = _intValue(_orderData?['subTotal']);
+    final shippingCost = _intValue(_orderData?['shippingCost']);
+    final discountAmount = _intValue(_orderData?['discountAmount']);
+    final totalAmount = _intValue(_orderData?['totalAmount']);
+
     return _card(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              const Icon(Icons.credit_card_outlined, color: _accentBlue, size: 20),
+              const Icon(
+                Icons.credit_card_outlined,
+                color: _accentBlue,
+                size: 20,
+              ),
               const SizedBox(width: 8),
               const Text(
                 'Payment Summary',
@@ -488,11 +599,35 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
             ],
           ),
           const SizedBox(height: 14),
-          _paymentRow('Subtotal',       '₹44,998.00', valueColor: AppColors.black),
+          _paymentRow(
+            'Subtotal',
+            _formatCurrency(subtotal),
+            valueColor: AppColors.black,
+          ),
           const SizedBox(height: 8),
-          _paymentRow('Shipping Fee',   'Free',        valueColor: AppColors.success),
+          _paymentRow(
+            'Shipping Cost',
+            _formatCurrency(shippingCost),
+            valueColor: AppColors.black,
+          ),
           const SizedBox(height: 8),
-          _paymentRow('Estimated Tax',  '₹4,050.00',  valueColor: AppColors.black),
+          _paymentRow(
+            'Discount',
+            _formatCurrency(discountAmount),
+            valueColor: AppColors.success,
+          ),
+          const SizedBox(height: 8),
+          _paymentRow(
+            'Payment Method',
+            _paymentMethod(),
+            valueColor: AppColors.black,
+          ),
+          const SizedBox(height: 8),
+          _paymentRow(
+            'Payment Status',
+            _paymentStatus(),
+            valueColor: _paymentStatusColor(),
+          ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 12),
             child: Divider(height: 1, color: Color(0xFFF3F4F6)),
@@ -509,7 +644,7 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
                 ),
               ),
               Text(
-                widget.totalAmount,
+                _formatCurrency(totalAmount),
                 style: const TextStyle(
                   fontSize: 16,
                   fontWeight: FontWeight.bold,
@@ -517,6 +652,12 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
                 ),
               ),
             ],
+          ),
+          const SizedBox(height: 8),
+          _paymentRow(
+            'Tracking Number',
+            _trackingNumber(),
+            valueColor: AppColors.grey500,
           ),
         ],
       ),
@@ -535,19 +676,20 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
             fontWeight: FontWeight.w400,
           ),
         ),
-        Text(
-          value,
-          style: TextStyle(
-            fontSize: 13,
-            fontWeight: FontWeight.w600,
-            color: valueColor,
+        Flexible(
+          child: Text(
+            value,
+            textAlign: TextAlign.right,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w600,
+              color: valueColor,
+            ),
           ),
         ),
       ],
     );
   }
-
-  // ── Update Status ───────────────────────────────────────────────────────────
 
   Widget _buildUpdateStatusCard() {
     return _card(
@@ -555,22 +697,29 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
         child: DropdownButton<String>(
           value: _currentStatus,
           isExpanded: true,
-          icon: const Icon(Icons.keyboard_arrow_down, color: AppColors.grey400, size: 20),
-          hint: Text('Update Status: $_currentStatus'),
+          icon: const Icon(
+            Icons.keyboard_arrow_down,
+            color: AppColors.grey400,
+            size: 20,
+          ),
           style: const TextStyle(
             fontSize: 14,
             fontWeight: FontWeight.w500,
             color: AppColors.black,
           ),
-          onChanged: (val) {
-            if (val != null) setState(() => _currentStatus = val);
-          },
+          onChanged: _isSavingStatus
+              ? null
+              : (val) {
+                  if (val != null) {
+                    _updateStatus(val);
+                  }
+                },
           items: _statusOptions
               .map(
-                (s) => DropdownMenuItem(
-                  value: s,
+                (status) => DropdownMenuItem(
+                  value: status,
                   child: Text(
-                    'Update Status: $s',
+                    'Update Status: $status',
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.w500,
@@ -584,8 +733,6 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
       ),
     );
   }
-
-
 
   Widget _card({required Widget child}) {
     return Container(
@@ -620,9 +767,220 @@ class _AdminOrderDetailScreenState extends State<AdminOrderDetailScreen> {
     );
   }
 
-  String _emailFor(String name) {
-    final parts = name.toLowerCase().split(' ');
-    if (parts.length >= 2) return '${parts[0]}.${parts[1][0]}@email.com';
-    return '${parts[0]}@email.com';
+  String _customerName() {
+    final firstName = _userData?['firstName']?.toString() ?? '';
+    final lastName = _userData?['lastName']?.toString() ?? '';
+    final fullName = [
+      firstName,
+      lastName,
+    ].where((part) => part.trim().isNotEmpty).toList().join(' ');
+    if (fullName.isNotEmpty) return fullName;
+    return _userData?['name']?.toString() ??
+        _userData?['userName']?.toString() ??
+        'Unknown Customer';
+  }
+
+  String _customerEmail() {
+    return _userData?['email']?.toString() ?? 'N/A';
+  }
+
+  String _customerPhone() {
+    return _userData?['phone']?.toString() ?? 'N/A';
+  }
+
+  String _customerAddress() {
+    final location = _userData?['location']?.toString() ?? '';
+    final city = _userData?['city']?.toString() ?? '';
+    final state = _userData?['state']?.toString() ?? '';
+    final parts = [
+      location,
+      city,
+      state,
+    ].where((part) => part.trim().isNotEmpty).toList();
+    if (parts.isNotEmpty) return parts.join(', ');
+    return 'N/A';
+  }
+
+  String _paymentMethod() {
+    return _orderData?['paymentMethod']?.toString() ?? 'N/A';
+  }
+
+  String _paymentStatus() {
+    return _orderData?['paymentStatus']?.toString() ?? 'N/A';
+  }
+
+  Color _paymentStatusColor() {
+    switch (_paymentStatus().toLowerCase()) {
+      case 'completed':
+        return AppColors.success;
+      case 'pending':
+        return AppColors.warning;
+      case 'failed':
+      case 'refunded':
+        return AppColors.danger;
+      default:
+        return AppColors.grey500;
+    }
+  }
+
+  String _trackingNumber() {
+    return _orderData?['trackingNumber']?.toString() ?? 'N/A';
+  }
+
+  int _intValue(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
+  }
+
+  String _formatCurrency(int value) {
+    return '₹${value.toString().replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (match) => ',')}';
+  }
+
+  DateTime _parseDateTime(dynamic value) {
+    if (value is Timestamp) return value.toDate();
+    if (value is DateTime) return value;
+    if (value is String && value.isNotEmpty) {
+      return DateTime.tryParse(value) ?? DateTime.fromMillisecondsSinceEpoch(0);
+    }
+    return DateTime.fromMillisecondsSinceEpoch(0);
+  }
+
+  String _formatDate(DateTime date) {
+    const months = [
+      'Jan',
+      'Feb',
+      'Mar',
+      'Apr',
+      'May',
+      'Jun',
+      'Jul',
+      'Aug',
+      'Sep',
+      'Oct',
+      'Nov',
+      'Dec',
+    ];
+    final day = date.day.toString().padLeft(2, '0');
+    return '$day ${months[date.month - 1]} ${date.year}';
+  }
+
+  int get _activeStep {
+    switch (_currentStatus) {
+      case 'Pending':
+        return 0;
+      case 'Processing':
+        return 2;
+      case 'Shipped':
+        return 3;
+      case 'Delivered':
+        return 4;
+      default:
+        return 0;
+    }
+  }
+
+  bool _isDone(int idx) => idx < _activeStep;
+  bool _isActive(int idx) => idx == _activeStep;
+
+  Color get _statusBadgeBg {
+    switch (_currentStatus) {
+      case 'Processing':
+        return const Color(0xFFEEF2FF);
+      case 'Shipped':
+        return const Color(0xFFDCFCE7);
+      case 'Pending':
+        return const Color(0xFFFFF7ED);
+      case 'Delivered':
+        return const Color(0xFFF0FDF4);
+      case 'Cancelled':
+      case 'Returned':
+        return const Color(0xFFFFE4E6);
+      default:
+        return AppColors.grey100;
+    }
+  }
+
+  Color get _statusBadgeColor {
+    switch (_currentStatus) {
+      case 'Processing':
+        return _accentBlue;
+      case 'Shipped':
+        return AppColors.success;
+      case 'Pending':
+        return AppColors.warning;
+      case 'Delivered':
+        return const Color(0xFF16A34A);
+      case 'Cancelled':
+      case 'Returned':
+        return AppColors.danger;
+      default:
+        return AppColors.grey500;
+    }
+  }
+
+  static const List<Map<String, dynamic>> _steps = [
+    {'label': 'Placed', 'icon': Icons.check_circle_outline},
+    {'label': 'Confirmed', 'icon': Icons.verified_outlined},
+    {'label': 'Processing', 'icon': Icons.sync},
+    {'label': 'Shipped', 'icon': Icons.local_shipping_outlined},
+    {'label': 'Delivered', 'icon': Icons.inventory_2_outlined},
+  ];
+}
+
+class _OrderItemRecord {
+  final String id;
+  final String productId;
+  final String productName;
+  final String productImage;
+  final int quantity;
+  final int price;
+
+  const _OrderItemRecord({
+    required this.id,
+    required this.productId,
+    required this.productName,
+    required this.productImage,
+    required this.quantity,
+    required this.price,
+  });
+
+  factory _OrderItemRecord.fromSources(
+    String id,
+    Map<String, dynamic> data,
+    Map<String, dynamic>? productData,
+  ) {
+    final productImage =
+        data['productImage']?.toString() ??
+        data['productImageUrl']?.toString() ??
+        data['imageUrl']?.toString() ??
+        data['image']?.toString() ??
+        productData?['productImage']?.toString() ??
+        productData?['productImageUrl']?.toString() ??
+        productData?['imageUrl']?.toString() ??
+        productData?['image']?.toString() ??
+        '';
+
+    final productName =
+        data['productName']?.toString() ??
+        productData?['name']?.toString() ??
+        '';
+
+    return _OrderItemRecord(
+      id: id,
+      productId: data['productId']?.toString() ?? '',
+      productName: productName,
+      productImage: productImage,
+      quantity: _parseInt(data['quantity']),
+      price: _parseInt(data['price']),
+    );
+  }
+
+  int get lineTotal => price * quantity;
+
+  static int _parseInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? 0;
   }
 }

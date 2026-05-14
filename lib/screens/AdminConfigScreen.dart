@@ -1,7 +1,12 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
 import '../theme/app_colors.dart';
 import '../widgets/admin_bottom_navigation_bar.dart';
 import 'AdminCustomerCareScreen.dart';
+import '../services/app_config_service.dart';
 
 class AdminConfigScreen extends StatefulWidget {
   const AdminConfigScreen({Key? key}) : super(key: key);
@@ -15,37 +20,71 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
 
   // General Settings
   bool _maintenanceMode = false;
-  String _selectedCurrency = 'INR (₹)';
-  final TextEditingController _appNameController =
-      TextEditingController(text: 'Tekzo Admin');
+  final TextEditingController _appNameController = TextEditingController();
 
   // App Branding — primary color (starts from theme)
   Color _primaryColor = AppColors.primary;
-
-  // System Preferences
-  String _selectedLanguage = 'English (India)';
-  String _selectedTimezone = 'IST (UTC+05:30)';
-
-  final List<String> _currencies = ['INR (₹)', 'USD (\$)', 'EUR (€)', 'GBP (£)'];
-  final List<String> _languages = [
-    'English (India)',
-    'English (US)',
-    'Hindi',
-    'Tamil',
-    'Telugu',
-    'Kannada',
-  ];
-  final List<String> _timezones = [
-    'IST (UTC+05:30)',
-    'UTC+00:00',
-    'UTC-05:00',
-    'UTC+08:00',
-  ];
+  String _logoPath = '';
+  File? _logoFile;
 
   @override
   void dispose() {
     _appNameController.dispose();
     super.dispose();
+  }
+
+  Future<void> _pickLogo() async {
+    final pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 85,
+    );
+
+    if (pickedFile == null) return;
+
+    final imageFile = File(pickedFile.path);
+    if (!await imageFile.exists()) return;
+
+    final appDir = await getApplicationDocumentsDirectory();
+    final logoDir = Directory(
+      '${appDir.path}${Platform.pathSeparator}branding',
+    );
+    if (!await logoDir.exists()) {
+      await logoDir.create(recursive: true);
+    }
+
+    final extension = pickedFile.path.split('.').last;
+    final fileName =
+        'admin_logo_${DateTime.now().millisecondsSinceEpoch}.$extension';
+    final savedPath = '${logoDir.path}${Platform.pathSeparator}$fileName';
+    final savedFile = await imageFile.copy(savedPath);
+
+    setState(() {
+      _logoFile = savedFile;
+      _logoPath = savedFile.path;
+    });
+  }
+
+  Future<void> _saveAppConfig() async {
+    final appName = _appNameController.text.trim();
+    if (appName.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('App name cannot be empty')));
+      return;
+    }
+
+    await AppConfigService.saveAppConfig(
+      appName: appName,
+      maintenanceMode: _maintenanceMode,
+      logoPath: _logoPath,
+    );
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Configuration saved!'),
+        backgroundColor: Color(0xFF4C6FFF),
+      ),
+    );
   }
 
   String _toHex(Color c) =>
@@ -131,8 +170,11 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                         ],
                       ),
                       child: isSelected
-                          ? const Icon(Icons.check,
-                              color: AppColors.white, size: 20)
+                          ? const Icon(
+                              Icons.check,
+                              color: AppColors.white,
+                              size: 20,
+                            )
                           : null,
                     ),
                   );
@@ -155,18 +197,16 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
             _buildAppBar(),
             Expanded(
               child: SingleChildScrollView(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16,
+                  vertical: 16,
+                ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     _buildSectionLabel('GENERAL SETTINGS'),
                     const SizedBox(height: 8),
                     _buildGeneralSettingsCard(),
-                    const SizedBox(height: 20),
-                    _buildSectionLabel('SYSTEM PREFERENCES'),
-                    const SizedBox(height: 8),
-                    _buildSystemPreferencesCard(),
                     const SizedBox(height: 20),
                     _buildCustomerCareButton(),
                     const SizedBox(height: 20),
@@ -197,8 +237,11 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         children: [
           GestureDetector(
             onTap: () => Navigator.of(context).pop(),
-            child: const Icon(Icons.arrow_back,
-                color: AppColors.black, size: 22),
+            child: const Icon(
+              Icons.arrow_back,
+              color: AppColors.black,
+              size: 22,
+            ),
           ),
           const SizedBox(width: 16),
           const Text(
@@ -234,27 +277,50 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
     return _whiteCard(
       child: Column(
         children: [
-          // App Name
-          _settingsRow(
-            icon: Icons.article_outlined,
-            label: 'App Name',
-            trailing: SizedBox(
-              width: 130,
-              child: TextField(
-                controller: _appNameController,
-                textAlign: TextAlign.right,
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.grey600,
-                  fontWeight: FontWeight.w500,
+          StreamBuilder<AppConfigData>(
+            stream: AppConfigService.configStream(),
+            builder: (context, snapshot) {
+              final config = snapshot.data;
+              final currentAppName =
+                  config?.appName ?? AppConfigService.defaultAppName;
+              final currentMaintenanceMode = config?.maintenanceMode ?? false;
+              final currentLogoPath = config?.logoPath ?? '';
+              if (_appNameController.text != currentAppName) {
+                _appNameController.text = currentAppName;
+                _appNameController.selection = TextSelection.fromPosition(
+                  TextPosition(offset: _appNameController.text.length),
+                );
+              }
+              if (_maintenanceMode != currentMaintenanceMode) {
+                _maintenanceMode = currentMaintenanceMode;
+              }
+              if (_logoPath != currentLogoPath) {
+                _logoPath = currentLogoPath;
+                _logoFile = _logoPath.isEmpty ? null : File(_logoPath);
+              }
+
+              return _settingsRow(
+                icon: Icons.article_outlined,
+                label: 'App Name',
+                trailing: SizedBox(
+                  width: 130,
+                  child: TextField(
+                    controller: _appNameController,
+                    textAlign: TextAlign.right,
+                    style: const TextStyle(
+                      fontSize: 13,
+                      color: AppColors.grey600,
+                      fontWeight: FontWeight.w500,
+                    ),
+                    decoration: const InputDecoration(
+                      border: InputBorder.none,
+                      isDense: true,
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
                 ),
-                decoration: const InputDecoration(
-                  border: InputBorder.none,
-                  isDense: true,
-                  contentPadding: EdgeInsets.zero,
-                ),
-              ),
-            ),
+              );
+            },
           ),
           _divider(),
 
@@ -267,115 +333,6 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               onChanged: (val) => setState(() => _maintenanceMode = val),
               activeColor: _accentBlue,
               materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-            ),
-          ),
-          _divider(),
-
-          // Currency
-          _settingsRow(
-            icon: Icons.account_balance_wallet_outlined,
-            label: 'Currency',
-            trailing: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedCurrency,
-                isDense: true,
-                icon: const Icon(Icons.keyboard_arrow_down,
-                    color: _accentBlue, size: 18),
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: _accentBlue,
-                  fontWeight: FontWeight.w600,
-                ),
-                onChanged: (val) {
-                  if (val != null) setState(() => _selectedCurrency = val);
-                },
-                items: _currencies
-                    .map((c) => DropdownMenuItem(
-                          value: c,
-                          child: Text(c,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: _accentBlue,
-                                fontWeight: FontWeight.w600,
-                              )),
-                        ))
-                    .toList(),
-              ),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ── System Preferences Card ─────────────────────────────────────────────────
-
-  Widget _buildSystemPreferencesCard() {
-    return _whiteCard(
-      child: Column(
-        children: [
-          // Default Language
-          _settingsRow(
-            icon: Icons.language_outlined,
-            label: 'Default Language',
-            trailing: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedLanguage,
-                isDense: true,
-                icon: const Icon(Icons.keyboard_arrow_down,
-                    color: AppColors.grey400, size: 18),
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.grey500,
-                  fontWeight: FontWeight.w500,
-                ),
-                onChanged: (val) {
-                  if (val != null) setState(() => _selectedLanguage = val);
-                },
-                items: _languages
-                    .map((l) => DropdownMenuItem(
-                          value: l,
-                          child: Text(l,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.grey600,
-                              )),
-                        ))
-                    .toList(),
-              ),
-            ),
-          ),
-          _divider(),
-
-          // Timezone
-          _settingsRow(
-            icon: Icons.access_time_outlined,
-            label: 'Timezone',
-            trailing: DropdownButtonHideUnderline(
-              child: DropdownButton<String>(
-                value: _selectedTimezone,
-                isDense: true,
-                icon: const Icon(Icons.keyboard_arrow_down,
-                    color: AppColors.grey400, size: 18),
-                style: const TextStyle(
-                  fontSize: 13,
-                  color: AppColors.grey500,
-                  fontWeight: FontWeight.w500,
-                ),
-                onChanged: (val) {
-                  if (val != null) setState(() => _selectedTimezone = val);
-                },
-                items: _timezones
-                    .map((t) => DropdownMenuItem(
-                          value: t,
-                          child: Text(t,
-                              style: const TextStyle(
-                                fontSize: 13,
-                                color: AppColors.grey600,
-                              )),
-                        ))
-                    .toList(),
-              ),
             ),
           ),
         ],
@@ -411,8 +368,11 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
         child: const Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.headset_mic_outlined,
-                color: Color(0xFF4C6FFF), size: 20),
+            Icon(
+              Icons.headset_mic_outlined,
+              color: Color(0xFF4C6FFF),
+              size: 20,
+            ),
             SizedBox(width: 10),
             Text(
               'Customer Care',
@@ -442,8 +402,11 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Row(
                 children: [
-                  const Icon(Icons.palette_outlined,
-                      color: AppColors.grey500, size: 20),
+                  const Icon(
+                    Icons.palette_outlined,
+                    color: AppColors.grey500,
+                    size: 20,
+                  ),
                   const SizedBox(width: 12),
                   const Expanded(
                     child: Text(
@@ -481,8 +444,11 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                     ),
                   ),
                   const SizedBox(width: 4),
-                  const Icon(Icons.chevron_right,
-                      color: AppColors.grey400, size: 18),
+                  const Icon(
+                    Icons.chevron_right,
+                    color: AppColors.grey400,
+                    size: 18,
+                  ),
                 ],
               ),
             ),
@@ -500,9 +466,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
           ),
           const SizedBox(height: 10),
           GestureDetector(
-            onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Logo upload coming soon')),
-            ),
+            onTap: _pickLogo,
             child: Row(
               children: [
                 Container(
@@ -511,11 +475,23 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
                   decoration: BoxDecoration(
                     color: AppColors.grey100,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: AppColors.grey200, width: 1),
+                    border: Border.all(color: AppColors.grey200, width: 1),
                   ),
-                  child: const Icon(Icons.upload_file_outlined,
-                      color: AppColors.grey400, size: 24),
+                  child: _logoFile != null && _logoFile!.existsSync()
+                      ? ClipRRect(
+                          borderRadius: BorderRadius.circular(10),
+                          child: Image.file(
+                            _logoFile!,
+                            fit: BoxFit.cover,
+                            width: 56,
+                            height: 56,
+                          ),
+                        )
+                      : const Icon(
+                          Icons.upload_file_outlined,
+                          color: AppColors.grey400,
+                          size: 24,
+                        ),
                 ),
                 const SizedBox(width: 14),
                 const Column(
@@ -552,11 +528,7 @@ class _AdminConfigScreenState extends State<AdminConfigScreen> {
 
   Widget _buildSaveButton() {
     return GestureDetector(
-      onTap: () => ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-            content: Text('Configuration saved!'),
-            backgroundColor: Color(0xFF4C6FFF)),
-      ),
+      onTap: _saveAppConfig,
       child: Container(
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 16),

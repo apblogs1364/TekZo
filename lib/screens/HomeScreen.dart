@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'package:tekzo/widgets/index.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
+import 'package:tekzo/widgets/app_name_text.dart';
 import 'SettingsScreen.dart';
 
 /// Main home screen with search, categories, featured banner, and navigation.
@@ -42,8 +43,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         _scaffoldKey.currentState?.openDrawer();
                       },
                     ),
-                    const Text(
-                      'Tekzo',
+                    const AppNameText(
                       style: TextStyle(
                         fontSize: 24,
                         fontWeight: FontWeight.bold,

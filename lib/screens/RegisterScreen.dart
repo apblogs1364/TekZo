@@ -4,6 +4,7 @@ import '../theme/app_colors.dart';
 import 'dart:io';
 import 'package:image_picker/image_picker.dart';
 import 'package:tekzo/services/auth_service.dart';
+import 'package:tekzo/services/app_config_service.dart';
 
 /// Registration screen for creating a new user account.
 class RegisterScreen extends StatefulWidget {
@@ -76,13 +77,20 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       ),
                     ),
                     const SizedBox(height: 4),
-                    const Text(
-                      'Join Tekzo Today',
-                      style: TextStyle(
-                        fontSize: 13,
-                        color: AppColors.grey500,
-                        fontWeight: FontWeight.w500,
-                      ),
+                    StreamBuilder<String>(
+                      stream: AppConfigService.appNameStream(),
+                      builder: (context, snapshot) {
+                        final appName =
+                            snapshot.data ?? AppConfigService.defaultAppName;
+                        return Text(
+                          'Join $appName Today',
+                          style: const TextStyle(
+                            fontSize: 13,
+                            color: AppColors.grey500,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        );
+                      },
                     ),
                   ],
                 ),

@@ -1,77 +1,281 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:path_provider/path_provider.dart';
+
 import '../theme/app_colors.dart';
 import '../widgets/admin_bottom_navigation_bar.dart';
 
 class AdminEditProduct extends StatefulWidget {
-  final String productName;
-  final String sku;
-  final String price;
-  final String brand;
-  final String category;
-  final String description;
-  final String stockQty;
-  final String discountPrice;
-
-  const AdminEditProduct({
-    Key? key,
-    required this.productName,
-    required this.sku,
-    this.price = '',
-    this.brand = '',
-    this.category = 'Audio',
-    this.description = '',
-    this.stockQty = '',
-    this.discountPrice = '',
-  }) : super(key: key);
+  final String productId;
+  const AdminEditProduct({Key? key, required this.productId}) : super(key: key);
 
   @override
   State<AdminEditProduct> createState() => _AdminEditProductState();
 }
 
 class _AdminEditProductState extends State<AdminEditProduct> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
   final Color accentBlue = const Color(0xFF4C6FFF);
 
-  late final TextEditingController _nameController;
-  late final TextEditingController _skuController;
-  late final TextEditingController _priceController;
-  late final TextEditingController _discountController;
-  late final TextEditingController _stockController;
-  late final TextEditingController _brandController;
-  late final TextEditingController _descController;
-  late String _selectedCategory;
+  // Form Controllers
+  late TextEditingController nameController;
+  late TextEditingController brandController;
+  late TextEditingController descriptionController;
+  late TextEditingController shortDescriptionController;
+  late TextEditingController priceController;
+  late TextEditingController discountPercentageController;
+  late TextEditingController stockController;
+  late TextEditingController colorController;
+  late TextEditingController ratingController;
+  late TextEditingController totalReviewsController;
 
-  final List<String> _categories = [
-    'Audio',
-    'Smartphones',
-    'Laptops',
-    'Tablets',
-    'Wearables',
-    'Accessories',
-  ];
+  String? selectedCategoryId;
+  List<Map<String, String>> categories = [];
+  File? _productImage;
+  String _existingImagePath = '';
+  bool isFeatured = false;
+  bool isActive = true;
+  List<Map<String, String>> specifications = [];
+  bool _isLoading = true;
+  bool _isSaving = false;
+  Map<String, dynamic>? _productData;
 
   @override
   void initState() {
     super.initState();
-    _nameController     = TextEditingController(text: widget.productName);
-    _skuController      = TextEditingController(text: widget.sku);
-    _priceController    = TextEditingController(text: widget.price);
-    _discountController = TextEditingController(text: widget.discountPrice);
-    _stockController    = TextEditingController(text: widget.stockQty);
-    _brandController    = TextEditingController(text: widget.brand);
-    _descController     = TextEditingController(text: widget.description);
-    _selectedCategory   =
-        _categories.contains(widget.category) ? widget.category : _categories.first;
+    nameController = TextEditingController();
+    brandController = TextEditingController();
+    descriptionController = TextEditingController();
+    shortDescriptionController = TextEditingController();
+    priceController = TextEditingController();
+    discountPercentageController = TextEditingController();
+    stockController = TextEditingController();
+    colorController = TextEditingController();
+    ratingController = TextEditingController();
+    totalReviewsController = TextEditingController();
+    _fetchProductData();
+    _fetchCategories();
+  }
+
+  Future<void> _fetchCategories() async {
+    try {
+      final snapshot = await _db.collection('categories').get();
+      setState(() {
+        categories = snapshot.docs.map((doc) {
+          return {'id': doc.id, 'name': doc['name']?.toString() ?? 'Unknown'};
+        }).toList();
+      });
+    } catch (e) {
+      print('Error fetching categories: $e');
+    }
+  }
+
+  Future<void> _fetchProductData() async {
+    try {
+      final doc = await _db.collection('products').doc(widget.productId).get();
+      if (doc.exists) {
+        _productData = doc.data();
+        nameController.text = _productData?['name']?.toString() ?? '';
+        brandController.text = _productData?['brand']?.toString() ?? '';
+        descriptionController.text =
+            _productData?['description']?.toString() ?? '';
+        shortDescriptionController.text =
+            _productData?['shortDescription']?.toString() ?? '';
+        priceController.text = _productData?['price']?.toString() ?? '';
+        discountPercentageController.text =
+            _productData?['discountPercentage']?.toString() ?? '';
+        stockController.text = _productData?['stock']?.toString() ?? '';
+        colorController.text = _productData?['color']?.toString() ?? '';
+        ratingController.text = _productData?['rating']?.toString() ?? '';
+        totalReviewsController.text =
+            _productData?['totalReviews']?.toString() ?? '';
+        selectedCategoryId = _productData?['categoryId']?.toString();
+        _existingImagePath = _productData?['productImage']?.toString() ?? '';
+        isFeatured = _productData?['isFeatured'] as bool? ?? false;
+        isActive = _productData?['isActive'] as bool? ?? true;
+
+        final specMap =
+            _productData?['specifications'] as Map<String, dynamic>? ?? {};
+        specifications = specMap.entries
+            .map((e) => {'field': e.key, 'value': e.value.toString()})
+            .toList();
+
+        setState(() => _isLoading = false);
+      }
+    } catch (e) {
+      print('Error fetching product: $e');
+      setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _pickProductImage() async {
+    final pickedFile = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
+    if (pickedFile != null) {
+      setState(() {
+        _productImage = File(pickedFile.path);
+      });
+    }
+  }
+
+  Future<String> _saveImageLocally(File imageFile) async {
+    try {
+      if (!await imageFile.exists()) {
+        throw Exception('Image file does not exist');
+      }
+
+      final appDir = await getApplicationDocumentsDirectory();
+      final imagesDir = Directory(
+        '${appDir.path}${Platform.pathSeparator}product_images',
+      );
+      if (!await imagesDir.exists()) {
+        await imagesDir.create(recursive: true);
+      }
+
+      final timestamp = DateTime.now().millisecondsSinceEpoch;
+      final fileName = 'product_$timestamp.jpg';
+      final savedPath = '${imagesDir.path}${Platform.pathSeparator}$fileName';
+
+      final savedFile = await imageFile.copy(savedPath);
+      print('Image saved locally: ${savedFile.path}');
+      return savedFile.path;
+    } catch (e) {
+      print('Local save error: $e');
+      rethrow;
+    }
+  }
+
+  void _addSpecificationRow() {
+    showDialog(
+      context: context,
+      builder: (context) {
+        final fieldController = TextEditingController();
+        final valueController = TextEditingController();
+        return AlertDialog(
+          title: const Text('Add Specification'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: fieldController,
+                decoration: const InputDecoration(labelText: 'Field Name'),
+              ),
+              const SizedBox(height: 12),
+              TextField(
+                controller: valueController,
+                decoration: const InputDecoration(labelText: 'Value'),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel'),
+            ),
+            TextButton(
+              onPressed: () {
+                if (fieldController.text.isNotEmpty &&
+                    valueController.text.isNotEmpty) {
+                  setState(() {
+                    specifications.add({
+                      'field': fieldController.text,
+                      'value': valueController.text,
+                    });
+                  });
+                  Navigator.pop(context);
+                }
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _updateProduct() async {
+    if (nameController.text.isEmpty ||
+        priceController.text.isEmpty ||
+        selectedCategoryId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please fill all required fields')),
+      );
+      return;
+    }
+
+    setState(() => _isSaving = true);
+
+    try {
+      String productImageUrl = _existingImagePath;
+      if (_productImage != null) {
+        print('Saving image locally...');
+        productImageUrl = await _saveImageLocally(_productImage!);
+        print('Image saved locally: $productImageUrl');
+      }
+
+      final finalPrice =
+          int.parse(priceController.text) -
+          (int.parse(priceController.text) *
+              (int.tryParse(discountPercentageController.text) ?? 0) ~/
+              100);
+
+      final specMap = <String, String>{};
+      for (var spec in specifications) {
+        specMap[spec['field']!] = spec['value']!;
+      }
+
+      await _db.collection('products').doc(widget.productId).update({
+        'name': nameController.text,
+        'brand': brandController.text,
+        'description': descriptionController.text,
+        'shortDescription': shortDescriptionController.text,
+        'price': int.parse(priceController.text),
+        'finalPrice': finalPrice,
+        'discountPercentage':
+            int.tryParse(discountPercentageController.text) ?? 0,
+        'stock': int.tryParse(stockController.text) ?? 0,
+        'color': colorController.text,
+        'categoryId': selectedCategoryId,
+        'rating': double.tryParse(ratingController.text) ?? 0.0,
+        'totalReviews': int.tryParse(totalReviewsController.text) ?? 0,
+        'productImage': productImageUrl,
+        'isFeatured': isFeatured,
+        'isActive': isActive,
+        'specifications': specMap,
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Product updated successfully')),
+      );
+      Navigator.pop(context, true);
+    } catch (e) {
+      if (!mounted) return;
+      print('Update product error: $e');
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Error: ${e.toString()}')));
+    } finally {
+      if (mounted) setState(() => _isSaving = false);
+    }
   }
 
   @override
   void dispose() {
-    _nameController.dispose();
-    _skuController.dispose();
-    _priceController.dispose();
-    _discountController.dispose();
-    _stockController.dispose();
-    _brandController.dispose();
-    _descController.dispose();
+    nameController.dispose();
+    brandController.dispose();
+    descriptionController.dispose();
+    shortDescriptionController.dispose();
+    priceController.dispose();
+    discountPercentageController.dispose();
+    stockController.dispose();
+    colorController.dispose();
+    ratingController.dispose();
+    totalReviewsController.dispose();
     super.dispose();
   }
 
@@ -80,41 +284,50 @@ class _AdminEditProductState extends State<AdminEditProduct> {
     return Scaffold(
       backgroundColor: const Color(0xFFF3F4F6),
       body: SafeArea(
-        child: Column(
-          children: [
-            _buildAppBar(),
-            Expanded(
-              child: SingleChildScrollView(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 20),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildSectionTitle('PRODUCT IMAGES'),
-                    const SizedBox(height: 12),
-                    _buildImageSection(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('BASIC INFORMATION'),
-                    const SizedBox(height: 12),
-                    _buildBasicInfoSection(),
-                    const SizedBox(height: 24),
-                    _buildSectionTitle('PRICING & INVENTORY'),
-                    const SizedBox(height: 12),
-                    _buildPricingInventorySection(),
-                    const SizedBox(height: 24),
-                    _buildSpecificationsSection(),
-                    const SizedBox(height: 30),
-                  ],
+        child: _isLoading
+            ? const Center(
+                child: CircularProgressIndicator(
+                  valueColor: AlwaysStoppedAnimation(AppColors.primary),
                 ),
+              )
+            : Column(
+                children: [
+                  _buildAppBar(),
+                  Expanded(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 20,
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          _buildSectionTitle('PRODUCT IMAGE'),
+                          const SizedBox(height: 12),
+                          _buildImageSection(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('BASIC INFORMATION'),
+                          const SizedBox(height: 12),
+                          _buildBasicInfoSection(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('PRICING & INVENTORY'),
+                          const SizedBox(height: 12),
+                          _buildPricingInventorySection(),
+                          const SizedBox(height: 24),
+                          _buildSectionTitle('SPECIFICATIONS'),
+                          const SizedBox(height: 12),
+                          _buildSpecificationsSection(),
+                          const SizedBox(height: 30),
+                        ],
+                      ),
+                    ),
+                  ),
+                  const AdminBottomNavigationBar(),
+                ],
               ),
-            ),
-            const AdminBottomNavigationBar(),
-          ],
-        ),
       ),
     );
   }
-
-  // ── App Bar ──────────────────────────────────────────────────────────────────
 
   Widget _buildAppBar() {
     return Container(
@@ -123,14 +336,13 @@ class _AdminEditProductState extends State<AdminEditProduct> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => Navigator.of(context).pop(),
+            onTap: () => Navigator.pop(context),
             child: const Icon(Icons.arrow_back, color: AppColors.grey600),
           ),
           const SizedBox(width: 16),
           const Expanded(
             child: Text(
               'Edit Product',
-              textAlign: TextAlign.start,
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.bold,
@@ -139,12 +351,7 @@ class _AdminEditProductState extends State<AdminEditProduct> {
             ),
           ),
           ElevatedButton(
-            onPressed: () {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Product updated!')),
-              );
-              Navigator.pop(context);
-            },
+            onPressed: _isSaving ? null : _updateProduct,
             style: ElevatedButton.styleFrom(
               backgroundColor: accentBlue,
               foregroundColor: AppColors.white,
@@ -154,17 +361,24 @@ class _AdminEditProductState extends State<AdminEditProduct> {
                 borderRadius: BorderRadius.circular(8),
               ),
             ),
-            child: const Text(
-              'Save',
-              style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
-            ),
+            child: _isSaving
+                ? const SizedBox(
+                    width: 16,
+                    height: 16,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(AppColors.white),
+                    ),
+                  )
+                : const Text(
+                    'Save',
+                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600),
+                  ),
           ),
         ],
       ),
     );
   }
-
-  // ── Helpers ──────────────────────────────────────────────────────────────────
 
   Widget _buildSectionTitle(String title) {
     return Text(
@@ -178,404 +392,299 @@ class _AdminEditProductState extends State<AdminEditProduct> {
     );
   }
 
-  Widget _buildLabel(String text) {
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 6),
-      child: Text(
-        text,
-        style: const TextStyle(
-          fontSize: 12,
-          fontWeight: FontWeight.w600,
-          color: Color(0xFF9CA3AF),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTextField({
-    TextEditingController? controller,
-    String? hint,
-    int maxLines = 1,
-    Widget? suffixIcon,
-  }) {
-    return Container(
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: TextField(
-        controller: controller,
-        maxLines: maxLines,
-        decoration: InputDecoration(
-          hintText: hint,
-          hintStyle: const TextStyle(
-            fontSize: 14,
-            fontWeight: FontWeight.w500,
-            color: Color(0xFF4B5563),
-          ),
-          border: InputBorder.none,
-          contentPadding:
-              const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          suffixIcon: suffixIcon,
-        ),
-        style: const TextStyle(
-          fontSize: 14,
-          fontWeight: FontWeight.w500,
-          color: AppColors.black,
-        ),
-      ),
-    );
-  }
-
-  Widget _buildDropdownField() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-      decoration: BoxDecoration(
-        color: const Color(0xFFF9FAFB),
-        borderRadius: BorderRadius.circular(10),
-      ),
-      child: DropdownButtonHideUnderline(
-        child: DropdownButton<String>(
-          value: _selectedCategory,
-          isExpanded: true,
-          icon: const Icon(
-            Icons.keyboard_arrow_down,
-            color: Color(0xFF9CA3AF),
-            size: 20,
-          ),
-          items: _categories
-              .map(
-                (c) => DropdownMenuItem(
-                  value: c,
-                  child: Text(
-                    c,
-                    style: const TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.black,
-                    ),
-                  ),
-                ),
-              )
-              .toList(),
-          onChanged: (val) {
-            if (val != null) setState(() => _selectedCategory = val);
-          },
-        ),
-      ),
-    );
-  }
-
-  // ── Sections ────────────────────────────────────────────────────────────────
-
   Widget _buildImageSection() {
-    return Row(
-      children: [
-        // Add Image Button
-        CustomPaint(
-          painter: _DashedRectPainter(
-            color: const Color(0xFF9CA3AF),
-            strokeWidth: 1.5,
-            dashSpace: 5,
-            dashWidth: 5,
-          ),
-          child: Container(
-            width: 100,
-            height: 100,
-            decoration: BoxDecoration(
-              color: AppColors.white,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: const Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  Icons.add_photo_alternate_outlined,
-                  color: Color(0xFF88A4E8),
-                  size: 28,
-                ),
-                SizedBox(height: 6),
-                Text(
-                  'Add Image',
-                  style: TextStyle(
-                    fontSize: 10,
-                    fontWeight: FontWeight.w500,
-                    color: Color(0xFF88A4E8),
-                  ),
-                ),
-              ],
-            ),
-          ),
+    return GestureDetector(
+      onTap: _pickProductImage,
+      child: Container(
+        height: 120,
+        decoration: BoxDecoration(
+          color: AppColors.white,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: const Color(0xFFE5E7EB), width: 2),
         ),
-        const SizedBox(width: 12),
-        _buildImageThumbnail(Icons.headphones, true),
-        const SizedBox(width: 12),
-        _buildImageThumbnail(Icons.watch, false),
-      ],
-    );
-  }
-
-  Widget _buildImageThumbnail(IconData icon, bool hasDelete) {
-    return Stack(
-      children: [
-        Container(
-          width: 100,
-          height: 100,
-          decoration: BoxDecoration(
-            color: const Color(0xFF1E1E1E),
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: AppColors.grey200.withOpacity(0.5),
-                blurRadius: 6,
-                offset: const Offset(0, 3),
+        child: _productImage == null
+            ? (_existingImagePath.isNotEmpty
+                  ? (_existingImagePath.startsWith('http')
+                        ? ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.network(
+                              _existingImagePath,
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.add_photo_alternate_outlined,
+                                        color: accentBlue,
+                                        size: 32,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      const Text(
+                                        'Tap to change product image',
+                                        style: TextStyle(
+                                          color: AppColors.grey600,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          )
+                        : ClipRRect(
+                            borderRadius: BorderRadius.circular(10),
+                            child: Image.file(
+                              File(_existingImagePath),
+                              fit: BoxFit.cover,
+                              errorBuilder: (context, error, stackTrace) {
+                                return Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.add_photo_alternate_outlined,
+                                        color: accentBlue,
+                                        size: 32,
+                                      ),
+                                      const SizedBox(height: 8),
+                                      const Text(
+                                        'Tap to change product image',
+                                        style: TextStyle(
+                                          color: AppColors.grey600,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              },
+                            ),
+                          ))
+                  : Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            Icons.add_photo_alternate_outlined,
+                            color: accentBlue,
+                            size: 32,
+                          ),
+                          const SizedBox(height: 8),
+                          const Text(
+                            'Tap to change product image',
+                            style: TextStyle(
+                              color: AppColors.grey600,
+                              fontSize: 12,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ))
+            : ClipRRect(
+                borderRadius: BorderRadius.circular(10),
+                child: Image.file(_productImage!, fit: BoxFit.cover),
               ),
-            ],
-          ),
-          child: Center(child: Icon(icon, color: AppColors.white, size: 48)),
-        ),
-        if (hasDelete)
-          Positioned(
-            top: 6,
-            right: 6,
-            child: Container(
-              padding: const EdgeInsets.all(2),
-              decoration: const BoxDecoration(
-                color: Colors.black54,
-                shape: BoxShape.circle,
-              ),
-              child: const Icon(Icons.close, color: AppColors.white, size: 14),
-            ),
-          ),
-      ],
+      ),
     );
   }
 
   Widget _buildBasicInfoSection() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildLabel('Product Name'),
-          _buildTextField(
-            controller: _nameController,
-            hint: 'e.g. Tekzo Pro Buds 2',
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Category'),
-                    _buildDropdownField(),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Brand'),
-                    _buildTextField(
-                      controller: _brandController,
-                      hint: 'Tekzo',
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          _buildLabel('Description'),
-          _buildTextField(
-            controller: _descController,
-            hint: 'Write a brief product description...',
-            maxLines: 4,
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        _buildTextField('Product Name*', nameController),
+        const SizedBox(height: 12),
+        _buildTextField('Brand', brandController),
+        const SizedBox(height: 12),
+        _buildCategoryDropdown(),
+        const SizedBox(height: 12),
+        _buildTextField('Color', colorController),
+        const SizedBox(height: 12),
+        _buildTextField('Short Description', shortDescriptionController),
+        const SizedBox(height: 12),
+        _buildTextField('Description', descriptionController, maxLines: 3),
+        const SizedBox(height: 12),
+        Row(
+          children: [
+            Checkbox(
+              value: isFeatured,
+              onChanged: (value) => setState(() => isFeatured = value ?? false),
+            ),
+            const Text('Featured Product'),
+          ],
+        ),
+      ],
     );
   }
 
   Widget _buildPricingInventorySection() {
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Price'),
-                    _buildTextField(
-                      controller: _priceController,
-                      hint: '₹ 0.00',
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Discount Price'),
-                    _buildTextField(
-                      controller: _discountController,
-                      hint: '₹ Optional',
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('SKU'),
-                    _buildTextField(
-                      controller: _skuController,
-                      hint: 'TKZ-001',
-                      suffixIcon: const Icon(
-                        Icons.qr_code_scanner,
-                        color: Color(0xFF9CA3AF),
-                        size: 18,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildLabel('Stock Quantity'),
-                    _buildTextField(
-                      controller: _stockController,
-                      hint: '0',
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-        ],
-      ),
+    return Column(
+      children: [
+        _buildTextField(
+          'Price*',
+          priceController,
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          'Discount %',
+          discountPercentageController,
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          'Stock Quantity',
+          stockController,
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          'Rating',
+          ratingController,
+          keyboardType: TextInputType.number,
+        ),
+        const SizedBox(height: 12),
+        _buildTextField(
+          'Total Reviews',
+          totalReviewsController,
+          keyboardType: TextInputType.number,
+        ),
+      ],
     );
   }
 
   Widget _buildSpecificationsSection() {
     return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-          children: [
-            _buildSectionTitle('SPECIFICATIONS'),
-            GestureDetector(
-              onTap: () {},
-              child: Text(
-                '+ Add Row',
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: accentBlue,
-                ),
-              ),
+        ...specifications.asMap().entries.map((entry) {
+          final idx = entry.key;
+          final spec = entry.value;
+          return Container(
+            margin: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: AppColors.white,
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: const Color(0xFFE5E7EB)),
             ),
-          ],
-        ),
-        const SizedBox(height: 12),
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: AppColors.white,
-            borderRadius: BorderRadius.circular(16),
-          ),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              _buildTextField(hint: 'Display'),
-              const SizedBox(height: 12),
-              _buildTextField(hint: 'Processor'),
-            ],
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        spec['field']!,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 12,
+                        ),
+                      ),
+                      Text(
+                        spec['value']!,
+                        style: const TextStyle(
+                          color: AppColors.grey600,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                GestureDetector(
+                  onTap: () => setState(() => specifications.removeAt(idx)),
+                  child: const Icon(
+                    Icons.delete_outline,
+                    color: AppColors.danger,
+                    size: 18,
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+        const SizedBox(height: 8),
+        GestureDetector(
+          onTap: _addSpecificationRow,
+          child: Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: accentBlue.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: accentBlue),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.add, color: accentBlue, size: 18),
+                const SizedBox(width: 6),
+                Text(
+                  'Add Specification',
+                  style: TextStyle(color: accentBlue, fontSize: 12),
+                ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
-}
 
-// ── Dashed rect painter ───────────────────────────────────────────────────────
-
-class _DashedRectPainter extends CustomPainter {
-  final Color color;
-  final double strokeWidth;
-  final double dashWidth;
-  final double dashSpace;
-
-  _DashedRectPainter({
-    required this.color,
-    required this.strokeWidth,
-    required this.dashWidth,
-    required this.dashSpace,
-  });
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = color
-      ..strokeWidth = strokeWidth
-      ..style = PaintingStyle.stroke;
-
-    final RRect rrect = RRect.fromRectAndRadius(
-      Rect.fromLTWH(0, 0, size.width, size.height),
-      const Radius.circular(12),
+  Widget _buildTextField(
+    String label,
+    TextEditingController controller, {
+    TextInputType keyboardType = TextInputType.text,
+    int maxLines = 1,
+  }) {
+    return TextField(
+      controller: controller,
+      keyboardType: keyboardType,
+      maxLines: maxLines,
+      decoration: InputDecoration(
+        labelText: label,
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: accentBlue, width: 2),
+        ),
+        filled: true,
+        fillColor: AppColors.white,
+      ),
     );
-
-    final path = Path()..addRRect(rrect);
-    final pathMetrics = path.computeMetrics();
-
-    for (final pathMetric in pathMetrics) {
-      double distance = 0.0;
-      bool draw = true;
-      while (distance < pathMetric.length) {
-        final len = draw ? dashWidth : dashSpace;
-        if (draw) {
-          canvas.drawPath(
-            pathMetric.extractPath(distance, distance + len),
-            paint,
-          );
-        }
-        distance += len;
-        draw = !draw;
-      }
-    }
   }
 
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  Widget _buildCategoryDropdown() {
+    return DropdownButtonFormField<String>(
+      value: selectedCategoryId,
+      hint: const Text('Select Category*'),
+      items: categories
+          .map(
+            (cat) => DropdownMenuItem(
+              value: cat['id'],
+              child: Text(cat['name'] ?? 'Unknown'),
+            ),
+          )
+          .toList(),
+      onChanged: (value) => setState(() => selectedCategoryId = value),
+      decoration: InputDecoration(
+        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: const BorderSide(color: Color(0xFFE5E7EB)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(8),
+          borderSide: BorderSide(color: accentBlue, width: 2),
+        ),
+        filled: true,
+        fillColor: AppColors.white,
+      ),
+    );
+  }
 }

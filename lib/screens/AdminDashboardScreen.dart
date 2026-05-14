@@ -1,9 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../theme/app_colors.dart';
 import '../widgets/admin_bottom_navigation_bar.dart';
 import 'AdminProfileScreen.dart';
+import '../widgets/app_name_text.dart';
 
 /// Admin dashboard screen showing stats, quick actions, and recent orders.
 class AdminDashboardScreen extends StatefulWidget {
@@ -15,6 +17,7 @@ class AdminDashboardScreen extends StatefulWidget {
 
 class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _ordersSub;
 
   String _totalSales = '₹0';
   String _activeUsers = '0';
@@ -39,67 +42,77 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
   Future<void> _fetchDashboardData() async {
     try {
-      // Fetch total sales (sum of totalAmount from orders)
-      final ordersSnapshot = await _db.collection('orders').get();
-      double totalSales = 0;
-      int orderCount = 0;
-      for (var doc in ordersSnapshot.docs) {
-        final data = doc.data();
-        totalSales +=
-            (double.tryParse(data['totalAmount']?.toString() ?? '0') ?? 0);
-        orderCount++;
-      }
-
       // Fetch active users count
       final usersSnapshot = await _db.collection('users').get();
-      int userCount = usersSnapshot.docs.length;
+      final int userCount = usersSnapshot.docs.length;
 
       // Fetch total products count
       final productsSnapshot = await _db.collection('products').get();
-      int productCount = productsSnapshot.docs.length;
+      final int productCount = productsSnapshot.docs.length;
 
-      // Fetch recent orders (all orders and take last 3)
-      final recentOrdersSnapshot = await _db.collection('orders').get();
+      // Listen to orders so dashboard updates live when status changes
+      _ordersSub?.cancel();
+      _ordersSub = _db
+          .collection('orders')
+          .snapshots()
+          .listen(
+            (ordersSnapshot) {
+              double totalSales = 0;
+              int orderCount = 0;
+              List<_RecentOrder> recentOrders = [];
 
-      List<_RecentOrder> recentOrders = [];
-      for (var doc in recentOrdersSnapshot.docs) {
-        final data = doc.data();
-        final status = data['orderStatus']?.toString() ?? 'Pending';
-        final statusColor = _getStatusColor(status);
+              for (var doc in ordersSnapshot.docs) {
+                final data = doc.data();
+                totalSales +=
+                    (double.tryParse(data['totalAmount']?.toString() ?? '0') ??
+                    0);
+                orderCount++;
+                final status = data['orderStatus']?.toString() ?? 'Pending';
+                final statusColor = _getStatusColor(status);
+                recentOrders.add(
+                  _RecentOrder(
+                    product: data['orderNumber']?.toString() ?? 'Order',
+                    customer:
+                        'Order #${data['orderNumber']?.toString() ?? 'N/A'}',
+                    orderId: '#${doc.id.substring(0, 6).toUpperCase()}',
+                    price: '₹${data['totalAmount']?.toString() ?? '0'}',
+                    status: status,
+                    statusColor: statusColor,
+                  ),
+                );
+              }
 
-        recentOrders.add(
-          _RecentOrder(
-            product: data['orderNumber']?.toString() ?? 'Order',
-            customer: 'Order #${data['orderNumber']?.toString() ?? 'N/A'}',
-            orderId: '#${doc.id.substring(0, 6).toUpperCase()}',
-            price: '₹${data['totalAmount']?.toString() ?? '0'}',
-            status: status,
-            statusColor: statusColor,
-          ),
-        );
-      }
+              if (recentOrders.length > 3) {
+                recentOrders = recentOrders.sublist(recentOrders.length - 3);
+              }
 
-      // Take only last 3 orders
-      if (recentOrders.length > 3) {
-        recentOrders = recentOrders.sublist(recentOrders.length - 3);
-      }
-
-      if (mounted) {
-        setState(() {
-          _totalSales = '₹${(totalSales / 1000).toStringAsFixed(1)}k';
-          _activeUsers = userCount.toString();
-          _newOrders = orderCount.toString();
-          _totalProducts = productCount.toString();
-          _recentOrders = recentOrders;
-          _isLoading = false;
-        });
-      }
+              if (mounted) {
+                setState(() {
+                  _totalSales = '₹${(totalSales / 1000).toStringAsFixed(1)}k';
+                  _activeUsers = userCount.toString();
+                  _newOrders = orderCount.toString();
+                  _totalProducts = productCount.toString();
+                  _recentOrders = recentOrders;
+                  _isLoading = false;
+                });
+              }
+            },
+            onError: (e) {
+              if (mounted) setState(() => _isLoading = false);
+            },
+          );
     } catch (e) {
       print('Dashboard fetch error: $e');
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
+  }
+
+  @override
+  void dispose() {
+    _ordersSub?.cancel();
+    super.dispose();
   }
 
   Color _getStatusColor(String status) {
@@ -365,8 +378,7 @@ class _HeaderInfo extends StatelessWidget {
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: const [
-            Text(
-              'Tekzo',
+            AppNameText(
               style: TextStyle(
                 fontSize: 26,
                 fontWeight: FontWeight.bold,
