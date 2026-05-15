@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'package:tekzo/services/auth_service.dart';
 import 'package:tekzo/widgets/index.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
 import 'OrderDetailScreen.dart';
 import 'ReviewScreen.dart';
@@ -18,47 +19,7 @@ class OrderScreen extends StatefulWidget {
 class _OrderScreenState extends State<OrderScreen> {
   int _selectedTabIndex = 0;
 
-  final List<Order> activeOrders = [
-    Order(
-      id: 'STKZ-08788',
-      productName: 'Leather Backpack',
-      imagePath: 'assets/images/backpack.jpg',
-      price: '₹1,299.00',
-      status: 'PENDING',
-      statusColor: AppColors.primary,
-      date: 'Oct 20, 2050 • 2 hours',
-    ),
-    Order(
-      id: 'STKZ-08092',
-      productName: 'Smart Speaker',
-      imagePath: 'assets/images/speaker.jpg',
-      price: '₹199.00',
-      status: 'PROCESSING',
-      statusColor: AppColors.warning,
-      date: 'Oct 19, 2050 • 1 hour',
-    ),
-  ];
-
-  final List<Order> completedOrders = [
-    Order(
-      id: 'STKZ-07420',
-      productName: 'Wireless Headphones',
-      imagePath: 'assets/images/headphones.jpg',
-      price: '₹349.00',
-      status: 'DELIVERED',
-      statusColor: AppColors.success,
-      date: 'Oct 18, 2050 • 3 hours',
-    ),
-    Order(
-      id: 'STKZ-07100',
-      productName: 'USB-C Cable',
-      imagePath: 'assets/images/cable.jpg',
-      price: '₹29.99',
-      status: 'DELIVERED',
-      statusColor: AppColors.success,
-      date: 'Oct 15, 2050 • 1 day',
-    ),
-  ];
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
 
   @override
   Widget build(BuildContext context) {
@@ -176,18 +137,110 @@ class _OrderScreenState extends State<OrderScreen> {
                   const SizedBox(height: 16),
                   // Orders List
                   Expanded(
-                    child: ListView.builder(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      itemCount: _selectedTabIndex == 0
-                          ? activeOrders.length
-                          : completedOrders.length,
-                      itemBuilder: (context, index) {
-                        final order = _selectedTabIndex == 0
-                            ? activeOrders[index]
-                            : completedOrders[index];
-                        return Padding(
-                          padding: const EdgeInsets.only(bottom: 16),
-                          child: _OrderCard(order: order),
+                    child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _db
+                          .collection('orders')
+                          .where(
+                            'userId',
+                            isEqualTo: AuthService
+                                .instance
+                                .loggedInUserData?['id']
+                                ?.toString(),
+                          )
+                          .orderBy('createdAt', descending: true)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError) {
+                          return const Center(
+                            child: Text('Failed to load orders'),
+                          );
+                        }
+                        if (!snapshot.hasData) {
+                          return const Center(
+                            child: CircularProgressIndicator(),
+                          );
+                        }
+
+                        final docs = snapshot.data!.docs;
+
+                        final active = <Order>[];
+                        final completed = <Order>[];
+
+                        for (final doc in docs) {
+                          final data = doc.data();
+                          final status = (data['orderStatus'] ?? '')
+                              .toString()
+                              .toLowerCase();
+                          // pick first item for preview
+                          String productName = 'Order';
+                          String imagePath = 'assets/images/placeholder.png';
+                          if (data['items'] is List &&
+                              (data['items'] as List).isNotEmpty) {
+                            final first =
+                                (data['items'] as List).first
+                                    as Map<String, dynamic>;
+                            productName =
+                                first['productName']?.toString() ?? productName;
+                            imagePath =
+                                first['productImage']?.toString() ?? imagePath;
+                          }
+                          final total =
+                              (data['totalAmount'] ?? data['total'] ?? 0)
+                                  .toString();
+                          final created = data['createdAt'];
+                          String dateStr = '';
+                          try {
+                            if (created is Timestamp) {
+                              dateStr = '${created.toDate().toLocal()}';
+                            } else if (created is DateTime) {
+                              dateStr = '${created.toLocal()}';
+                            }
+                          } catch (_) {}
+
+                          final order = Order(
+                            docId: doc.id,
+                            id: data['orderNumber']?.toString() ?? doc.id,
+                            productName: productName,
+                            imagePath: imagePath,
+                            price:
+                                '₹${double.tryParse(total)?.toStringAsFixed(2) ?? total}',
+                            status: (data['orderStatus'] ?? 'PENDING')
+                                .toString()
+                                .toUpperCase(),
+                            statusColor:
+                                (status == 'delivered' || status == 'completed')
+                                ? AppColors.success
+                                : AppColors.primary,
+                            date: dateStr.isNotEmpty
+                                ? dateStr
+                                : (data['createdAt']?.toString() ?? ''),
+                          );
+
+                          if (status == 'delivered' || status == 'completed') {
+                            completed.add(order);
+                          } else {
+                            active.add(order);
+                          }
+                        }
+
+                        final listToShow = _selectedTabIndex == 0
+                            ? active
+                            : completed;
+
+                        if (listToShow.isEmpty) {
+                          return const Center(child: Text('No orders found'));
+                        }
+
+                        return ListView.builder(
+                          padding: const EdgeInsets.symmetric(horizontal: 16),
+                          itemCount: listToShow.length,
+                          itemBuilder: (context, index) {
+                            final order = listToShow[index];
+                            return Padding(
+                              padding: const EdgeInsets.only(bottom: 16),
+                              child: _OrderCard(order: order),
+                            );
+                          },
                         );
                       },
                     ),
@@ -415,7 +468,8 @@ class _OrderCard extends StatelessWidget {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const OrderDetailScreen(),
+                        builder: (context) =>
+                            OrderDetailScreen(orderDocId: order.docId),
                       ),
                     );
                   },
@@ -475,6 +529,7 @@ class _OrderCard extends StatelessWidget {
 }
 
 class Order {
+  final String docId;
   final String id;
   final String productName;
   final String imagePath;
@@ -484,6 +539,7 @@ class Order {
   final String date;
 
   Order({
+    required this.docId,
     required this.id,
     required this.productName,
     required this.imagePath,

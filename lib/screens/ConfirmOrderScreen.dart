@@ -5,12 +5,15 @@ import 'package:tekzo/services/navigation_index_service.dart';
 import 'TrackOrderScreen.dart';
 
 class ConfirmOrderScreen extends StatelessWidget {
-  const ConfirmOrderScreen({Key? key}) : super(key: key);
+  final double totalAmount;
+
+  const ConfirmOrderScreen({Key? key, this.totalAmount = 0}) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
     const Color themeBlueGrey = Color(0xFF7A8B9D);
     const Color lightBlueGreyBg = Color(0xFFF0F4F8);
+    final displayTotal = totalAmount > 0 ? totalAmount : 1433.31;
 
     return Scaffold(
       backgroundColor: const Color(0xFFF9FAFC),
@@ -213,8 +216,8 @@ class ConfirmOrderScreen extends StatelessWidget {
                   // Total Amount Row
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: const [
-                      Text(
+                    children: [
+                      const Text(
                         'Total Amount',
                         style: TextStyle(
                           fontSize: 14,
@@ -223,10 +226,10 @@ class ConfirmOrderScreen extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '₹1,433.31',
+                        '₹${displayTotal.toStringAsFixed(2)}',
                         style: TextStyle(
                           fontSize: 18,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.bold, 
                           color: themeBlueGrey,
                         ),
                       ),

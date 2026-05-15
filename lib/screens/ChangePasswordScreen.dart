@@ -245,7 +245,7 @@ class _ChangePasswordScreenState extends State<ChangePasswordScreen> {
                     Center(
                       child: TextButton(
                         onPressed: () {
-                          // TODO: implement forgot password flow
+                          Navigator.pushNamed(context, '/forgot-password');
                         },
                         child: const Text(
                           'Forgot Password?',

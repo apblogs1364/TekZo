@@ -89,7 +89,10 @@ class TrackOrderScreen extends StatelessWidget {
                 ),
               ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFEDF2FF),
                   borderRadius: BorderRadius.circular(20),
@@ -118,7 +121,11 @@ class TrackOrderScreen extends StatelessWidget {
           const SizedBox(height: 12),
           Row(
             children: const [
-              Icon(Icons.inventory_2_outlined, size: 16, color: AppColors.grey400),
+              Icon(
+                Icons.inventory_2_outlined,
+                size: 16,
+                color: AppColors.grey400,
+              ),
               SizedBox(width: 8),
               Text(
                 'Standard Shipping • 2 Items',
@@ -198,9 +205,13 @@ class TrackOrderScreen extends StatelessWidget {
                 height: 28,
                 decoration: BoxDecoration(
                   shape: BoxShape.circle,
-                  color: isCompleted ? blueTheme : (isActive ? Colors.white : Colors.white),
+                  color: isCompleted
+                      ? blueTheme
+                      : (isActive ? Colors.white : Colors.white),
                   border: Border.all(
-                    color: isCompleted ? blueTheme : (isActive ? blueTheme : greyTheme),
+                    color: isCompleted
+                        ? blueTheme
+                        : (isActive ? blueTheme : greyTheme),
                     width: 2,
                   ),
                 ),
@@ -208,7 +219,9 @@ class TrackOrderScreen extends StatelessWidget {
                   child: Icon(
                     icon,
                     size: 16,
-                    color: isCompleted ? Colors.white : (isActive ? blueTheme : greyTheme),
+                    color: isCompleted
+                        ? Colors.white
+                        : (isActive ? blueTheme : greyTheme),
                   ),
                 ),
               ),
@@ -216,7 +229,9 @@ class TrackOrderScreen extends StatelessWidget {
                 Expanded(
                   child: Container(
                     width: 2,
-                    color: (isCompleted && title != 'Processed') ? blueTheme : greyTheme,
+                    color: (isCompleted && title != 'Processed')
+                        ? blueTheme
+                        : greyTheme,
                   ),
                 ),
             ],
@@ -233,7 +248,9 @@ class TrackOrderScreen extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 15,
                       fontWeight: FontWeight.bold,
-                      color: isActive || isCompleted ? AppColors.black87 : AppColors.grey500,
+                      color: isActive || isCompleted
+                          ? AppColors.black87
+                          : AppColors.grey500,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -329,49 +346,7 @@ class TrackOrderScreen extends StatelessWidget {
             padding: EdgeInsets.symmetric(vertical: 16),
             child: Divider(color: AppColors.grey200, height: 1),
           ),
-          const Text(
-            'Tracking Number',
-            style: TextStyle(
-              fontSize: 12,
-              color: AppColors.grey400,
-              fontWeight: FontWeight.w600,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text(
-                'TX-123456789',
-                style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.bold,
-                  color: Color(0xFF5D70F5),
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                decoration: BoxDecoration(
-                  color: AppColors.grey100,
-                  borderRadius: BorderRadius.circular(6),
-                ),
-                child: Row(
-                  children: const [
-                    Text(
-                      'COPY',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.grey500,
-                      ),
-                    ),
-                    SizedBox(width: 4),
-                    Icon(Icons.copy, size: 14, color: AppColors.grey500),
-                  ],
-                ),
-              ),
-            ],
-          ),
+          // Tracking number removed from UI per request.
         ],
       ),
     );
@@ -466,7 +441,9 @@ class TrackOrderScreen extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
-                      color: isCompleted ? AppColors.black87 : AppColors.grey500,
+                      color: isCompleted
+                          ? AppColors.black87
+                          : AppColors.grey500,
                     ),
                   ),
                   const SizedBox(height: 4),
@@ -474,7 +451,9 @@ class TrackOrderScreen extends StatelessWidget {
                     subtitle,
                     style: TextStyle(
                       fontSize: 12,
-                      color: isCompleted ? AppColors.grey400 : AppColors.grey400,
+                      color: isCompleted
+                          ? AppColors.grey400
+                          : AppColors.grey400,
                       fontWeight: FontWeight.w500,
                     ),
                   ),
