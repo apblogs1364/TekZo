@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:path_provider/path_provider.dart';
 
 class AuthService {
@@ -33,8 +34,33 @@ class AuthService {
       throw Exception('Incorrect password');
     }
 
-    _loggedInUserData = userData;
-    return userData;
+    _loggedInUserData = {...userData, 'id': userDoc.id};
+    return _loggedInUserData!;
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    try {
+      await FirebaseAuth.instance.sendPasswordResetEmail(email: email);
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'invalid-email') {
+        throw Exception('Invalid email');
+      }
+      if (e.code == 'user-not-found') {
+        throw Exception('User not found');
+      }
+      throw Exception(e.message ?? 'Failed to send password reset email');
+    } catch (_) {
+      throw Exception('Failed to send password reset email');
+    }
+  }
+
+  Future<bool> isEmailRegistered(String email) async {
+    final querySnapshot = await _db
+        .collection('users')
+        .where('email', isEqualTo: email)
+        .limit(1)
+        .get();
+    return querySnapshot.docs.isNotEmpty;
   }
 
   Future<void> signOut() async {

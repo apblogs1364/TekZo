@@ -325,31 +325,6 @@ class _AdminProfileScreenState extends State<AdminProfileScreen> {
     return Divider(height: 1, color: AppColors.grey200, indent: 52);
   }
 
-  Widget _buildLogoutButton(BuildContext context) {
-    return SizedBox(
-      width: double.infinity,
-      height: 48,
-      child: OutlinedButton.icon(
-        onPressed: () => _showLogoutDialog(context),
-        icon: const Icon(Icons.logout, color: AppColors.danger),
-        label: const Text(
-          'Logout',
-          style: TextStyle(
-            color: AppColors.danger,
-            fontSize: 15,
-            fontWeight: FontWeight.w600,
-          ),
-        ),
-        style: OutlinedButton.styleFrom(
-          side: const BorderSide(color: AppColors.danger, width: 1.2),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      ),
-    );
-  }
-
   Future<void> _showLogoutDialog(BuildContext context) async {
     final shouldLogout = await showDialog<bool>(
       context: context,

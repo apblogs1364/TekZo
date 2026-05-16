@@ -14,7 +14,6 @@ class AdminReviewManageScreen extends StatefulWidget {
 }
 
 class _AdminReviewManageScreenState extends State<AdminReviewManageScreen> {
-  static const Color _accentBlue = Color(0xFF4C6FFF);
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final TextEditingController _searchController = TextEditingController();
   String _searchQuery = '';
@@ -271,11 +270,8 @@ class _ReviewCard extends StatelessWidget {
   final _ReviewRecord review;
   final VoidCallback onView;
 
-  const _ReviewCard({
-    Key? key,
-    required this.review,
-    required this.onView,
-  }) : super(key: key);
+  const _ReviewCard({Key? key, required this.review, required this.onView})
+    : super(key: key);
 
   String get _avatarInitials {
     final parts = review.userName

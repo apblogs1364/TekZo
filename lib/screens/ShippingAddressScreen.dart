@@ -2,30 +2,7 @@ import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import '../widgets/custom_bottom_navigation_bar.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
-
-class Address {
-  String id;
-  String label;
-  String name;
-  String street;
-  String city;
-  String state;
-  String zip;
-  String phone;
-  bool isDefault;
-
-  Address({
-    required this.id,
-    required this.label,
-    required this.name,
-    required this.street,
-    required this.city,
-    required this.state,
-    required this.zip,
-    required this.phone,
-    this.isDefault = false,
-  });
-}
+import 'package:tekzo/services/address_book_service.dart';
 
 class ShippingAddressScreen extends StatefulWidget {
   const ShippingAddressScreen({Key? key}) : super(key: key);
@@ -35,48 +12,7 @@ class ShippingAddressScreen extends StatefulWidget {
 }
 
 class _ShippingAddressScreenState extends State<ShippingAddressScreen> {
-  late List<Address> addresses;
-
-  @override
-  void initState() {
-    super.initState();
-    // Initialize with sample addresses
-    addresses = [
-      Address(
-        id: '1',
-        label: 'Home',
-        name: 'Johnathan Anderson',
-        street: '123 Unicorn Valley Drive, Suite 400',
-        city: 'Palo Alto',
-        state: 'CA',
-        zip: '94301',
-        phone: '+1 (555) 0123 4567',
-        isDefault: true,
-      ),
-      Address(
-        id: '2',
-        label: 'Office',
-        name: 'Johnathan Anderson',
-        street: '800 Infinite Loop, Building 4',
-        city: 'Cupertino',
-        state: 'CA',
-        zip: '95014',
-        phone: '+1 (555) 9876 5432',
-        isDefault: false,
-      ),
-      Address(
-        id: '3',
-        label: 'Parents',
-        name: 'Mary Anderson',
-        street: '42nd Maple Avenue, Apartment 12B',
-        city: 'New York',
-        state: 'NY',
-        zip: '10001',
-        phone: '+1 (212) 555 0199',
-        isDefault: false,
-      ),
-    ];
-  }
+  List<Address> get addresses => AddressBookService.addresses;
 
   void _showAddAddressDialog() {
     final labelController = TextEditingController();
@@ -176,7 +112,7 @@ class _ShippingAddressScreenState extends State<ShippingAddressScreen> {
                   zipController.text.isNotEmpty &&
                   phoneController.text.isNotEmpty) {
                 setState(() {
-                  addresses.add(
+                  AddressBookService.add(
                     Address(
                       id: DateTime.now().toString(),
                       label: labelController.text,
@@ -401,7 +337,7 @@ class _ShippingAddressScreenState extends State<ShippingAddressScreen> {
           TextButton(
             onPressed: () {
               setState(() {
-                addresses.removeAt(index);
+                AddressBookService.removeAt(index);
               });
               Navigator.pop(context);
             },
@@ -417,12 +353,7 @@ class _ShippingAddressScreenState extends State<ShippingAddressScreen> {
 
   void _setAsDefault(int index) {
     setState(() {
-      // Remove default from all
-      for (var addr in addresses) {
-        addr.isDefault = false;
-      }
-      // Set selected as default
-      addresses[index].isDefault = true;
+      AddressBookService.setDefault(addresses[index].id);
     });
   }
 
@@ -661,26 +592,6 @@ class _ShippingAddressScreenState extends State<ShippingAddressScreen> {
                                 ),
                               ),
                               const SizedBox(width: 12),
-                              // Edit Button
-                              IconButton(
-                                onPressed: () =>
-                                    _showEditAddressDialog(address, index),
-                                icon: const Icon(Icons.edit_outlined),
-                                iconSize: 20,
-                                constraints: const BoxConstraints(
-                                  minHeight: 40,
-                                  minWidth: 40,
-                                ),
-                                style: IconButton.styleFrom(
-                                  side: const BorderSide(
-                                    color: AppColors.grey300,
-                                  ),
-                                  shape: RoundedRectangleBorder(
-                                    borderRadius: BorderRadius.circular(8),
-                                  ),
-                                ),
-                              ),
-                              const SizedBox(width: 8),
                               // Delete Button
                               IconButton(
                                 onPressed: () => _deleteAddress(index),

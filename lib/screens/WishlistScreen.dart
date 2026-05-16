@@ -1,7 +1,10 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../theme/app_colors.dart';
 import 'package:tekzo/services/auth_service.dart';
+import 'package:tekzo/screens/ProductDetailScreen.dart';
 import 'package:tekzo/widgets/index.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
 
@@ -14,30 +17,15 @@ class WishlistScreen extends StatefulWidget {
 }
 
 class _WishlistScreenState extends State<WishlistScreen> {
-  final List<WishlistItem> wishlistItems = [
-    WishlistItem(
-      name: 'Sony WH-850000',
-      price: '₹349.00',
-      imagePath: 'assets/images/sony_headphones.jpg',
-      isFavorite: true,
-    ),
-    WishlistItem(
-      name: 'iPhone 15 Pro',
-      price: '₹999.00',
-      imagePath: 'assets/images/iphone_15_pro.jpg',
-      isFavorite: true,
-    ),
-    WishlistItem(
-      name: 'Samsung S SmartWatch',
-      price: '₹199.00',
-      imagePath: 'assets/images/samsung_watch.jpg',
-      isFavorite: true,
-    ),
-  ];
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+
+  String? get _currentUserId =>
+      AuthService.instance.loggedInUserData?['id']?.toString();
 
   @override
   Widget build(BuildContext context) {
     final isLoggedIn = AuthService.instance.isLoggedIn;
+    final userId = _currentUserId;
 
     return Scaffold(
       backgroundColor: AppColors.white,
@@ -88,47 +76,179 @@ class _WishlistScreenState extends State<WishlistScreen> {
                   ),
                   // Wishlist Items
                   Expanded(
-                    child: wishlistItems.isEmpty
-                        ? Center(
-                            child: Column(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                Icon(
-                                  Icons.favorite_border,
-                                  size: 64,
-                                  color: AppColors.grey400,
-                                ),
-                                const SizedBox(height: 16),
-                                Text(
-                                  'Your wishlist is empty',
-                                  style: TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w600,
-                                    color: AppColors.grey600,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                        : ListView.builder(
-                            padding: const EdgeInsets.all(16),
-                            itemCount: wishlistItems.length,
-                            itemBuilder: (context, index) {
-                              return _WishlistItemCard(
-                                item: wishlistItems[index],
-                                onRemove: () {
-                                  setState(() {
-                                    wishlistItems.removeAt(index);
-                                  });
-                                },
-                                onAddToCart: () {
-                                  ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(
-                                      content: Text(
-                                        '${wishlistItems[index].name} added to cart',
+                    child: userId == null
+                        ? const SizedBox.shrink()
+                        : StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                            stream: _db
+                                .collection('users')
+                                .doc(userId)
+                                .collection('wishlist')
+                                .orderBy('addedAt', descending: true)
+                                .snapshots(),
+                            builder: (context, wishlistSnapshot) {
+                              if (wishlistSnapshot.hasError) {
+                                return const SizedBox.shrink();
+                              }
+
+                              if (wishlistSnapshot.connectionState ==
+                                  ConnectionState.waiting) {
+                                return const Center(
+                                  child: CircularProgressIndicator(),
+                                );
+                              }
+
+                              final wishlistDocs =
+                                  wishlistSnapshot.data?.docs ?? [];
+
+                              if (wishlistDocs.isEmpty) {
+                                return Center(
+                                  child: Column(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(
+                                        Icons.favorite_border,
+                                        size: 64,
+                                        color: AppColors.grey400,
                                       ),
-                                      duration: const Duration(seconds: 2),
-                                    ),
+                                      const SizedBox(height: 16),
+                                      Text(
+                                        'Your wishlist is empty',
+                                        style: TextStyle(
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.w600,
+                                          color: AppColors.grey600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                );
+                              }
+
+                              return ListView.builder(
+                                padding: const EdgeInsets.all(16),
+                                itemCount: wishlistDocs.length,
+                                itemBuilder: (context, index) {
+                                  final wishlistDoc = wishlistDocs[index];
+                                  final productId =
+                                      wishlistDoc
+                                          .data()['productId']
+                                          ?.toString() ??
+                                      wishlistDoc.id;
+
+                                  return StreamBuilder<
+                                    DocumentSnapshot<Map<String, dynamic>>
+                                  >(
+                                    stream: _db
+                                        .collection('products')
+                                        .doc(productId)
+                                        .snapshots(),
+                                    builder: (context, productSnapshot) {
+                                      if (productSnapshot.hasError ||
+                                          !productSnapshot.hasData ||
+                                          !productSnapshot.data!.exists) {
+                                        return const SizedBox.shrink();
+                                      }
+
+                                      final product = Map<String, dynamic>.from(
+                                        productSnapshot.data!.data()!,
+                                      );
+                                      product['id'] = productSnapshot.data!.id;
+
+                                      return _WishlistItemCard(
+                                        key: ValueKey(
+                                          product['id']?.toString() ??
+                                              productId,
+                                        ),
+                                        item: WishlistItem.fromProduct(product),
+                                        onRemove: () async {
+                                          await _db
+                                              .collection('users')
+                                              .doc(userId)
+                                              .collection('wishlist')
+                                              .doc(productId)
+                                              .delete();
+                                        },
+                                        onAddToCart: () async {
+                                          final cartRef = _db
+                                              .collection('users')
+                                              .doc(userId)
+                                              .collection('cart')
+                                              .doc(productId);
+                                          final snapshot = await cartRef.get();
+                                          final currentQuantity =
+                                              (snapshot.data()?['quantity']
+                                                      as num?)
+                                                  ?.toInt() ??
+                                              0;
+                                          final originalPrice =
+                                              (product['price'] ??
+                                                      product['finalPrice'] ??
+                                                      0)
+                                                  as num;
+                                          final discountedPrice =
+                                              (product['finalPrice'] ??
+                                                      product['price'] ??
+                                                      0)
+                                                  as num;
+                                          final discountPercentage =
+                                              (product['discountPercentage'] ??
+                                                      0)
+                                                  as num;
+
+                                          await cartRef.set({
+                                            'productId': productId,
+                                            'productName':
+                                                product['name']?.toString() ??
+                                                'Product',
+                                            'productImage':
+                                                product['productImage']
+                                                    ?.toString() ??
+                                                '',
+                                            'price': discountedPrice.toInt(),
+                                            'originalPrice': originalPrice
+                                                .toInt(),
+                                            'discountedPrice': discountedPrice
+                                                .toInt(),
+                                            'discountPercentage':
+                                                discountPercentage.toDouble(),
+                                            'quantity': currentQuantity + 1,
+                                            'addedAt':
+                                                FieldValue.serverTimestamp(),
+                                          }, SetOptions(merge: true));
+
+                                          await _db
+                                              .collection('users')
+                                              .doc(userId)
+                                              .collection('wishlist')
+                                              .doc(productId)
+                                              .delete();
+
+                                          ScaffoldMessenger.of(
+                                            context,
+                                          ).showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                '${product['name'] ?? 'Product'} added to cart',
+                                              ),
+                                              duration: const Duration(
+                                                seconds: 2,
+                                              ),
+                                            ),
+                                          );
+                                        },
+                                        onImageTap: () {
+                                          Navigator.push(
+                                            context,
+                                            MaterialPageRoute(
+                                              builder: (_) =>
+                                                  ProductDetailScreen(
+                                                    productData: product,
+                                                  ),
+                                            ),
+                                          );
+                                        },
+                                      );
+                                    },
                                   );
                                 },
                               );
@@ -197,14 +317,17 @@ class _WishlistScreenState extends State<WishlistScreen> {
 
 class _WishlistItemCard extends StatefulWidget {
   final WishlistItem item;
-  final VoidCallback onRemove;
-  final VoidCallback onAddToCart;
+  final Future<void> Function() onRemove;
+  final Future<void> Function() onAddToCart;
+  final VoidCallback onImageTap;
 
   const _WishlistItemCard({
+    Key? key,
     required this.item,
     required this.onRemove,
     required this.onAddToCart,
-  });
+    required this.onImageTap,
+  }) : super(key: key);
 
   @override
   State<_WishlistItemCard> createState() => _WishlistItemCardState();
@@ -217,6 +340,51 @@ class _WishlistItemCardState extends State<_WishlistItemCard> {
   void initState() {
     super.initState();
     isFavorite = widget.item.isFavorite;
+  }
+
+  @override
+  void didUpdateWidget(covariant _WishlistItemCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.item.id != widget.item.id) {
+      isFavorite = widget.item.isFavorite;
+    }
+  }
+
+  Widget _buildImage(String path) {
+    final p = path.trim();
+    if (p.isEmpty)
+      return Icon(
+        Icons.image_not_supported_outlined,
+        color: AppColors.grey600,
+        size: 40,
+      );
+    if (p.startsWith('http://') || p.startsWith('https://')) {
+      return Image.network(
+        p,
+        fit: BoxFit.cover,
+        width: 80,
+        height: 80,
+        errorBuilder: (c, e, s) => Icon(
+          Icons.image_not_supported_outlined,
+          color: AppColors.grey600,
+          size: 40,
+        ),
+      );
+    }
+    final file = File(p);
+    if (file.existsSync())
+      return Image.file(file, fit: BoxFit.cover, width: 80, height: 80);
+    return Image.asset(
+      p,
+      fit: BoxFit.cover,
+      width: 80,
+      height: 80,
+      errorBuilder: (c, e, s) => Icon(
+        Icons.image_not_supported_outlined,
+        color: AppColors.grey600,
+        size: 40,
+      ),
+    );
   }
 
   @override
@@ -240,12 +408,9 @@ class _WishlistItemCardState extends State<_WishlistItemCard> {
                 bottomLeft: Radius.circular(12),
               ),
             ),
-            child: Center(
-              child: Icon(
-                Icons.image_not_supported_outlined,
-                color: AppColors.grey600,
-                size: 40,
-              ),
+            child: GestureDetector(
+              onTap: widget.onImageTap,
+              child: Center(child: _buildImage(widget.item.imagePath)),
             ),
           ),
           // Product Details
@@ -280,7 +445,9 @@ class _WishlistItemCardState extends State<_WishlistItemCard> {
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
-                      onPressed: widget.onAddToCart,
+                      onPressed: () async {
+                        await widget.onAddToCart();
+                      },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: AppColors.primaryDark,
                         padding: const EdgeInsets.symmetric(vertical: 8),
@@ -306,13 +473,28 @@ class _WishlistItemCardState extends State<_WishlistItemCard> {
           Padding(
             padding: const EdgeInsets.all(12),
             child: GestureDetector(
-              onTap: () {
+              onTap: () async {
+                final prev = isFavorite;
                 setState(() {
                   isFavorite = !isFavorite;
-                  if (!isFavorite) {
-                    widget.onRemove();
-                  }
                 });
+                if (!isFavorite) {
+                  try {
+                    await widget.onRemove();
+                  } catch (e) {
+                    // rollback UI on error
+                    if (mounted) {
+                      setState(() {
+                        isFavorite = prev;
+                      });
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        SnackBar(
+                          content: Text('Failed to remove from wishlist'),
+                        ),
+                      );
+                    }
+                  }
+                }
               },
               child: Icon(
                 isFavorite ? Icons.favorite : Icons.favorite_outline,
@@ -328,15 +510,27 @@ class _WishlistItemCardState extends State<_WishlistItemCard> {
 }
 
 class WishlistItem {
+  final String id;
   final String name;
   final String price;
   final String imagePath;
   bool isFavorite;
 
   WishlistItem({
+    required this.id,
     required this.name,
     required this.price,
     required this.imagePath,
     this.isFavorite = false,
   });
+  factory WishlistItem.fromProduct(Map<String, dynamic> product) {
+    final finalPrice = product['finalPrice'] ?? product['price'] ?? 0;
+    return WishlistItem(
+      id: product['id']?.toString() ?? '',
+      name: product['name']?.toString() ?? 'Product',
+      price: '₹$finalPrice',
+      imagePath: product['productImage']?.toString() ?? '',
+      isFavorite: true,
+    );
+  }
 }

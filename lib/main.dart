@@ -4,6 +4,9 @@ import 'firebase_options.dart';
 import 'package:tekzo/screens/SplashScreen.dart';
 import 'package:tekzo/screens/HomeScreen.dart';
 import 'package:tekzo/screens/LoginScreen.dart';
+import 'package:tekzo/screens/ForgotPasswordScreen.dart';
+import 'package:tekzo/screens/ValidateOtpScreen.dart';
+// OTP screens removed; using Firebase Auth password reset link flow
 import 'package:tekzo/screens/RegisterScreen.dart';
 import 'package:tekzo/screens/ProductScreen.dart';
 import 'package:tekzo/screens/ProductDetailScreen.dart';
@@ -29,7 +32,6 @@ import 'package:tekzo/screens/AdminProfileScreen.dart';
 import 'package:tekzo/screens/AdminEditProfileScreen.dart';
 import 'package:tekzo/screens/MaintenanceScreen.dart';
 import 'package:tekzo/services/app_config_service.dart';
-import 'package:tekzo/services/admin_navigation_index_service.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -67,6 +69,18 @@ class MyApp extends StatelessWidget {
           settings: settings,
           builder: (_) => const LoginScreen(),
         );
+      case '/forgot-password':
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => const ForgotPasswordScreen(),
+        );
+      case '/validate-otp':
+        final email = settings.arguments as String? ?? '';
+        return MaterialPageRoute(
+          settings: settings,
+          builder: (_) => ValidateOtpScreen(email: email),
+        );
+      // validate-otp and reset-password routes removed; using Firebase Auth reset link
       case '/register':
         return MaterialPageRoute(
           settings: settings,
@@ -75,12 +89,14 @@ class MyApp extends StatelessWidget {
       case '/products':
         return MaterialPageRoute(
           settings: settings,
-          builder: (_) => const ProductScreen(),
+          builder: (_) =>
+              ProductScreen(initialCategoryId: settings.arguments as String?),
         );
       case '/product-detail':
+        final productData = settings.arguments as Map<String, dynamic>?;
         return MaterialPageRoute(
           settings: settings,
-          builder: (_) => const ProductDetailScreen(),
+          builder: (_) => ProductDetailScreen(productData: productData),
         );
       case '/cart':
         return MaterialPageRoute(

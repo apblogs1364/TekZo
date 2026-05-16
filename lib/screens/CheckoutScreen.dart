@@ -1,8 +1,13 @@
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:tekzo/services/auth_service.dart';
+import 'package:tekzo/services/address_book_service.dart';
+import 'package:tekzo/services/payment_service.dart';
 import '../theme/app_colors.dart';
 import '../widgets/custom_bottom_navigation_bar.dart';
 import 'package:tekzo/services/navigation_index_service.dart';
-import 'ConfirmOrderScreen.dart';
 
 class CheckoutScreen extends StatefulWidget {
   const CheckoutScreen({Key? key}) : super(key: key);
@@ -12,8 +17,138 @@ class CheckoutScreen extends StatefulWidget {
 }
 
 class _CheckoutScreenState extends State<CheckoutScreen> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final TextEditingController _couponController = TextEditingController();
+  final PaymentService _paymentService = PaymentService();
+
+  String? _appliedCouponCode;
+  double _appliedCouponPercentage = 0;
+  String? _selectedAddressId;
+
+  static const Map<String, double> _couponOffers = {
+    'SAVE10': 10,
+    'SAVE15': 15,
+    'SAVE20': 20,
+    'WELCOME25': 25,
+  };
+
+  String? get _currentUserId =>
+      AuthService.instance.loggedInUserData?['id']?.toString();
+
+  Address? get _selectedAddress {
+    if (AddressBookService.addresses.isEmpty) {
+      return null;
+    }
+
+    if (_selectedAddressId != null) {
+      for (final address in AddressBookService.addresses) {
+        if (address.id == _selectedAddressId) {
+          return address;
+        }
+      }
+    }
+
+    return AddressBookService.selectedAddress;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedAddressId = AddressBookService.selectedAddress?.id;
+  }
+
+  @override
+  void dispose() {
+    _couponController.dispose();
+    _paymentService.dispose();
+    super.dispose();
+  }
+
+  double _priceFromCartData(Map<String, dynamic> data, String primaryKey) {
+    final value = data[primaryKey] ?? data['price'] ?? 0;
+    return (value as num).toDouble();
+  }
+
+  double _originalUnitPrice(Map<String, dynamic> data) {
+    final discountedUnitPrice = _priceFromCartData(data, 'discountedPrice');
+    final originalValue = data['originalPrice'];
+    if (originalValue is num) {
+      return originalValue.toDouble();
+    }
+    return _priceFromCartData(data, 'price').toDouble() > 0
+        ? _priceFromCartData(data, 'price')
+        : discountedUnitPrice;
+  }
+
+  double _discountedUnitPrice(Map<String, dynamic> data) {
+    final discounted = data['discountedPrice'];
+    if (discounted is num) {
+      return discounted.toDouble();
+    }
+    final price = data['price'];
+    if (price is num) {
+      return price.toDouble();
+    }
+    return 0;
+  }
+
+  double _cartSubtotal(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs) {
+    return docs.fold<double>(0, (sum, doc) {
+      final data = doc.data();
+      final quantity = (data['quantity'] as num?)?.toDouble() ?? 1;
+      return sum + (_originalUnitPrice(data) * quantity);
+    });
+  }
+
+  double _cartItemDiscount(
+    List<QueryDocumentSnapshot<Map<String, dynamic>>> docs,
+  ) {
+    return docs.fold<double>(0, (sum, doc) {
+      final data = doc.data();
+      final quantity = (data['quantity'] as num?)?.toDouble() ?? 1;
+      final original = _originalUnitPrice(data);
+      final discounted = _discountedUnitPrice(data);
+      return sum + ((original - discounted) * quantity);
+    });
+  }
+
+  double _couponDiscount(double amountAfterItemDiscount) {
+    if (_appliedCouponPercentage <= 0) {
+      return 0;
+    }
+    return amountAfterItemDiscount * (_appliedCouponPercentage / 100);
+  }
+
+  void _applyCoupon() {
+    final enteredCode = _couponController.text.trim().toUpperCase();
+    final percentage = _couponOffers[enteredCode];
+
+    if (percentage == null) {
+      setState(() {
+        _appliedCouponCode = null;
+        _appliedCouponPercentage = 0;
+      });
+
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Invalid coupon code')));
+      return;
+    }
+
+    setState(() {
+      _appliedCouponCode = enteredCode;
+      _appliedCouponPercentage = percentage;
+    });
+
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text('$enteredCode applied')));
+  }
+
   @override
   Widget build(BuildContext context) {
+    final userId = _currentUserId;
+
     return Scaffold(
       backgroundColor: const Color(0xFFF6F7FB),
       appBar: PreferredSize(
@@ -76,7 +211,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             _buildPaymentMethodCard(),
             const SizedBox(height: 24),
             _buildSectionTitle('ORDER SUMMARY'),
-            _buildOrderSummaryCard(),
+            _buildOrderSummaryCard(userId),
             const SizedBox(height: 32),
           ],
         ),
@@ -113,6 +248,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildShippingAddressCard() {
+    final selectedAddress = _selectedAddress;
+
     return Container(
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
@@ -146,19 +283,35 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
-              children: const [
-                Text(
-                  'Aarav Patel',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: AppColors.black87,
-                  ),
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        selectedAddress?.name ?? 'Select Address',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.black87,
+                        ),
+                      ),
+                    ),
+                    GestureDetector(
+                      onTap: _showAddressDropdown,
+                      child: const Icon(
+                        Icons.keyboard_arrow_down,
+                        color: Color(0xFF5D70F5),
+                        size: 24,
+                      ),
+                    ),
+                  ],
                 ),
-                SizedBox(height: 8),
+                const SizedBox(height: 8),
                 Text(
-                  '45, MG Road, Indiranagar,\nBengaluru 560038, India',
-                  style: TextStyle(
+                  selectedAddress == null
+                      ? 'No saved address available'
+                      : selectedAddress.fullAddress,
+                  style: const TextStyle(
                     fontSize: 13,
                     color: AppColors.grey500,
                     height: 1.4,
@@ -167,25 +320,95 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ],
             ),
           ),
-          GestureDetector(
-            onTap: () {},
-            child: Row(
-              children: const [
-                Icon(Icons.edit, color: Color(0xFF5D70F5), size: 14),
-                SizedBox(width: 4),
-                Text(
-                  'Edit',
+        ],
+      ),
+    );
+  }
+
+  void _showAddressDropdown() {
+    if (AddressBookService.addresses.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No saved addresses available')),
+      );
+      return;
+    }
+
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 12),
+                Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: AppColors.grey300,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+                const SizedBox(height: 16),
+                const Text(
+                  'Select Address',
                   style: TextStyle(
-                    fontSize: 14,
+                    fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: Color(0xFF5D70F5),
+                    color: AppColors.black87,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Flexible(
+                  child: ListView.builder(
+                    shrinkWrap: true,
+                    itemCount: AddressBookService.addresses.length,
+                    itemBuilder: (context, index) {
+                      final address = AddressBookService.addresses[index];
+                      return ListTile(
+                        onTap: () {
+                          setState(() {
+                            _selectedAddressId = address.id;
+                          });
+                          Navigator.pop(context);
+                        },
+                        title: Row(
+                          children: [
+                            Expanded(
+                              child: Text(
+                                address.label,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                            if (address.isDefault)
+                              const Text(
+                                'Default',
+                                style: TextStyle(
+                                  fontSize: 12,
+                                  color: Color(0xFF5D70F5),
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                          ],
+                        ),
+                        subtitle: Text(address.fullAddress),
+                      );
+                    },
                   ),
                 ),
               ],
             ),
           ),
-        ],
-      ),
+        );
+      },
     );
   }
 
@@ -231,10 +454,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                 SizedBox(height: 4),
                 Text(
                   'Expires 12/26',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: AppColors.grey500,
-                  ),
+                  style: TextStyle(fontSize: 13, color: AppColors.grey500),
                 ),
               ],
             ),
@@ -245,100 +465,291 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     );
   }
 
-  Widget _buildOrderSummaryCard() {
-    return Column(
-      children: [
-        Container(
-          padding: const EdgeInsets.all(20),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(16),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.02),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Column(
-            children: [
-              Row(
-                children: [
-                  _buildProductImageBadge('assets/images/headphones.png', 'x1'),
-                  const SizedBox(width: 16),
-                  _buildProductImageBadge('assets/images/phone.png', 'x1'),
-                ],
-              ),
-              const SizedBox(height: 24),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('Subtotal', style: TextStyle(fontSize: 14, color: AppColors.grey500)),
-                  Text('₹1,349.00', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.black87)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('Shipping', style: TextStyle(fontSize: 14, color: AppColors.grey500)),
-                  Text('FREE', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.success)),
-                ],
-              ),
-              const SizedBox(height: 12),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: const [
-                  Text('Estimated Tax', style: TextStyle(fontSize: 14, color: AppColors.grey500)),
-                  Text('₹84.31', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: AppColors.black87)),
-                ],
-              ),
-            ],
-          ),
-        ),
-        const SizedBox(height: 16),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          decoration: BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.circular(12),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.02),
-                blurRadius: 10,
-                offset: const Offset(0, 4),
-              ),
-            ],
-          ),
-          child: Row(
-            children: [
-              Expanded(
-                child: TextField(
-                  decoration: InputDecoration(
-                    hintText: 'Promo code',
-                    hintStyle: TextStyle(fontSize: 14, color: AppColors.grey400),
-                    border: InputBorder.none,
-                    isDense: true,
+  Widget _buildOrderSummaryCard(String? userId) {
+    if (userId == null) {
+      return _buildEmptySummaryCard();
+    }
+
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _db
+          .collection('users')
+          .doc(userId)
+          .collection('cart')
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return _buildEmptySummaryCard();
+        }
+
+        if (!snapshot.hasData) {
+          return _buildEmptySummaryCard(showLoading: true);
+        }
+
+        final cartDocs = snapshot.data!.docs;
+        final subtotal = _cartSubtotal(cartDocs);
+        final itemDiscount = _cartItemDiscount(cartDocs);
+        final afterItemDiscount = subtotal - itemDiscount;
+        final couponDiscount = _couponDiscount(afterItemDiscount);
+        final totalAmount = afterItemDiscount - couponDiscount;
+
+        return Column(
+          children: [
+            Container(
+              padding: const EdgeInsets.all(20),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(16),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.02),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
                   ),
-                ),
+                ],
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-                decoration: BoxDecoration(
-                  color: const Color(0xFF1D2335), // Dark blue/black
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Text('Apply', style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14)),
+              child: Column(
+                children: [
+                  if (cartDocs.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 12),
+                      child: Text(
+                        'Your cart is empty',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.grey500,
+                        ),
+                      ),
+                    )
+                  else
+                    ...cartDocs.map((doc) {
+                      final data = doc.data();
+                      final quantity = (data['quantity'] as num?)?.toInt() ?? 1;
+                      final name = data['productName']?.toString() ?? 'Product';
+                      final imagePath = data['productImage']?.toString() ?? '';
+                      final originalUnitPrice = _originalUnitPrice(data);
+                      final discountedUnitPrice = _discountedUnitPrice(data);
+
+                      return Padding(
+                        padding: const EdgeInsets.only(bottom: 16),
+                        child: Row(
+                          children: [
+                            _buildProductImageBadge(imagePath, 'x$quantity'),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    name,
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(
+                                      fontSize: 14,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.black87,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    'Qty: $quantity',
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: AppColors.grey500,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '₹${discountedUnitPrice.toStringAsFixed(2)}',
+                                    style: const TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      color: AppColors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    }),
+                  const SizedBox(height: 8),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Subtotal',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.grey500,
+                        ),
+                      ),
+                      Text(
+                        '₹${subtotal.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.black87,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Discounted Amt',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.grey500,
+                        ),
+                      ),
+                      Text(
+                        '-₹${itemDiscount.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Shipping',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.grey500,
+                        ),
+                      ),
+                      const Text(
+                        'FREE',
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      const Text(
+                        'Coupon Discount',
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.grey500,
+                        ),
+                      ),
+                      Text(
+                        '-₹${couponDiscount.toStringAsFixed(2)}',
+                        style: const TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.success,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
               ),
-            ],
+            ),
+            const SizedBox(height: 16),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.circular(12),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.02),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ],
+              ),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextField(
+                      controller: _couponController,
+                      textCapitalization: TextCapitalization.characters,
+                      decoration: InputDecoration(
+                        hintText: 'Promo code',
+                        hintStyle: TextStyle(
+                          fontSize: 14,
+                          color: AppColors.grey400,
+                        ),
+                        border: InputBorder.none,
+                        isDense: true,
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap: _applyCoupon,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 20,
+                        vertical: 10,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF1D2335),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: const Text(
+                        'Apply',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildEmptySummaryCard({bool showLoading = false}) {
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.02),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Text(
+            showLoading ? 'Loading cart items...' : 'Your cart is empty',
+            style: const TextStyle(fontSize: 14, color: AppColors.grey500),
           ),
         ),
-      ],
+      ),
     );
   }
 
   Widget _buildProductImageBadge(String image, String badge) {
+    final trimmed = image.trim();
+
     return Stack(
       clipBehavior: Clip.none,
       children: [
@@ -350,15 +761,31 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             borderRadius: BorderRadius.circular(12),
           ),
           clipBehavior: Clip.antiAlias,
-          child: Image.asset(
-            image,
-            fit: BoxFit.cover,
-            errorBuilder: (context, error, stackTrace) {
-              return const Center(
-                child: Icon(Icons.image, color: Colors.white54, size: 28),
-              );
-            },
-          ),
+          child: trimmed.isEmpty
+              ? const Center(
+                  child: Icon(Icons.image, color: Colors.white54, size: 28),
+                )
+              : trimmed.startsWith('http://') || trimmed.startsWith('https://')
+              ? Image.network(
+                  trimmed,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Center(
+                      child: Icon(Icons.image, color: Colors.white54, size: 28),
+                    );
+                  },
+                )
+              : File(trimmed).existsSync()
+              ? Image.file(File(trimmed), fit: BoxFit.cover)
+              : Image.asset(
+                  trimmed,
+                  fit: BoxFit.cover,
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Center(
+                      child: Icon(Icons.image, color: Colors.white54, size: 28),
+                    );
+                  },
+                ),
         ),
         Positioned(
           top: -6,
@@ -379,78 +806,114 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
               ),
             ),
           ),
-        )
+        ),
       ],
     );
   }
 
   Widget _buildBottomPaymentBar() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, -4),
-          )
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: const [
-              Text(
-                'TOTAL PRICE',
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.grey400,
-                  letterSpacing: 0.5,
-                ),
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _currentUserId == null
+          ? null
+          : _db
+                .collection('users')
+                .doc(_currentUserId)
+                .collection('cart')
+                .snapshots(),
+      builder: (context, snapshot) {
+        final cartDocs = snapshot.data?.docs ?? const [];
+        final subtotal = _cartSubtotal(cartDocs);
+        final itemDiscount = _cartItemDiscount(cartDocs);
+        final afterItemDiscount = subtotal - itemDiscount;
+        final couponDiscount = _couponDiscount(afterItemDiscount);
+        final totalAmount = afterItemDiscount - couponDiscount;
+        final cartItems = cartDocs
+            .map((doc) => {...doc.data(), 'id': doc.id})
+            .toList();
+        final userData = AuthService.instance.loggedInUserData ?? {};
+        final userEmail = userData['email']?.toString() ?? '';
+        final userPhone = userData['phone']?.toString() ?? '';
+
+        return Container(
+          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.05),
+                blurRadius: 10,
+                offset: const Offset(0, -4),
               ),
-              SizedBox(height: 4),
-              Text(
-                '₹1,433.31',
-                style: TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.w900,
-                  color: AppColors.black87,
+            ],
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'TOTAL PRICE',
+                    style: TextStyle(
+                      fontSize: 10,
+                      fontWeight: FontWeight.bold,
+                      color: AppColors.grey400,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '₹${totalAmount.toStringAsFixed(2)}',
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.w900,
+                      color: AppColors.black87,
+                    ),
+                  ),
+                ],
+              ),
+              ElevatedButton(
+                onPressed: cartDocs.isEmpty
+                    ? null
+                    : () async {
+                        await _paymentService.openCheckout(
+                          context: context,
+                          amount: totalAmount.round(),
+                          userId: _currentUserId ?? '',
+                          userEmail: userEmail,
+                          userPhone: userPhone,
+                          cartItems: cartItems,
+                          subTotal: subtotal,
+                          discountAmount: itemDiscount + couponDiscount,
+                          shippingCost: 0,
+                          totalAmount: totalAmount,
+                        );
+                      },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF9AA9BD),
+                  disabledBackgroundColor: AppColors.grey300,
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 32,
+                    vertical: 16,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  elevation: 0,
+                ),
+                child: const Text(
+                  'Place Order',
+                  style: TextStyle(
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
                 ),
               ),
             ],
           ),
-          ElevatedButton(
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const ConfirmOrderScreen(),
-                ),
-              );
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFF9AA9BD), // Exactly matching the image "Place Order" grayish blue
-              padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 16),
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              elevation: 0,
-            ),
-            child: const Text(
-              'Place Order',
-              style: TextStyle(
-                fontSize: 15,
-                fontWeight: FontWeight.bold,
-                color: Colors.white,
-              ),
-            ),
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

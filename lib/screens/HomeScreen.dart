@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import '../theme/app_colors.dart';
 import 'package:tekzo/widgets/index.dart';
@@ -14,8 +17,17 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
+  final FirebaseFirestore _db = FirebaseFirestore.instance;
+  final TextEditingController _searchController = TextEditingController();
   bool _isLoggedIn = false;
+  String _searchQuery = '';
   final GlobalKey<ScaffoldState> _scaffoldKey = GlobalKey<ScaffoldState>();
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,42 +41,52 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // Header
-              Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 16.0,
-                  vertical: 12.0,
-                ),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    IconButton(
-                      icon: const Icon(Icons.menu),
-                      onPressed: () {
-                        _scaffoldKey.currentState?.openDrawer();
-                      },
-                    ),
-                    const AppNameText(
-                      style: TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.bold,
-                        color: AppColors.black,
+              Container(
+                width: double.infinity,
+                color: AppColors.primary,
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16.0,
+                    vertical: 12.0,
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.menu, color: AppColors.white),
+                        onPressed: () {
+                          _scaffoldKey.currentState?.openDrawer();
+                        },
                       ),
-                    ),
-                    Row(
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.notifications_outlined),
-                          onPressed: () {},
+                      const AppNameText(
+                        style: TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: AppColors.white,
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.shopping_cart_outlined),
-                          onPressed: () {
-                            Navigator.pushNamed(context, '/cart');
-                          },
-                        ),
-                      ],
-                    ),
-                  ],
+                      ),
+                      Row(
+                        children: [
+                          IconButton(
+                            icon: const Icon(
+                              Icons.notifications_outlined,
+                              color: AppColors.white,
+                            ),
+                            onPressed: () {},
+                          ),
+                          IconButton(
+                            icon: const Icon(
+                              Icons.shopping_cart_outlined,
+                              color: AppColors.white,
+                            ),
+                            onPressed: () {
+                              Navigator.pushNamed(context, '/cart');
+                            },
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
                 ),
               ),
               // Search Bar
@@ -74,6 +96,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   vertical: 8.0,
                 ),
                 child: TextField(
+                  controller: _searchController,
+                  onChanged: (value) {
+                    setState(() {
+                      _searchQuery = value.trim().toLowerCase();
+                    });
+                  },
                   decoration: InputDecoration(
                     hintText: 'Search gadgets, accessories...',
                     hintStyle: TextStyle(
@@ -175,42 +203,78 @@ class _HomeScreenState extends State<HomeScreen> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        GestureDetector(
-                          onTap: () =>
-                              Navigator.pushNamed(context, '/products'),
-                          child: _CategoryCard(
-                            icon: Icons.laptop,
-                            label: 'Laptops',
+                    StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: _db.collection('categories').snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.hasError ||
+                            snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                          return SizedBox(
+                            height: 92,
+                            child: Center(
+                              child:
+                                  snapshot.connectionState ==
+                                      ConnectionState.waiting
+                                  ? const CircularProgressIndicator(
+                                      valueColor: AlwaysStoppedAnimation(
+                                        AppColors.primary,
+                                      ),
+                                    )
+                                  : const SizedBox.shrink(),
+                            ),
+                          );
+                        }
+
+                        final categories =
+                            snapshot.data?.docs
+                                .map(
+                                  (doc) => _CategoryRecord.fromDoc(
+                                    doc.id,
+                                    doc.data(),
+                                  ),
+                                )
+                                .where((category) => category.isActive)
+                                .toList() ??
+                            [];
+
+                        categories.sort(
+                          (a, b) => a.displayOrder.compareTo(b.displayOrder),
+                        );
+
+                        final filteredCategories = _searchQuery.isEmpty
+                            ? categories
+                            : categories
+                                  .where(
+                                    (category) =>
+                                        category.matches(_searchQuery),
+                                  )
+                                  .toList();
+
+                        if (filteredCategories.isEmpty) {
+                          return const SizedBox(height: 104);
+                        }
+
+                        return SizedBox(
+                          height: 104,
+                          child: ListView.separated(
+                            scrollDirection: Axis.horizontal,
+                            itemCount: filteredCategories.length,
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 14),
+                            itemBuilder: (context, index) {
+                              final category = filteredCategories[index];
+                              return GestureDetector(
+                                onTap: () => Navigator.pushNamed(
+                                  context,
+                                  '/products',
+                                  arguments: category.id,
+                                ),
+                                child: _HomeCategoryCard(category: category),
+                              );
+                            },
                           ),
-                        ),
-                        GestureDetector(
-                          onTap: () =>
-                              Navigator.pushNamed(context, '/products'),
-                          child: _CategoryCard(
-                            icon: Icons.phone_iphone,
-                            label: 'Phones',
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () =>
-                              Navigator.pushNamed(context, '/products'),
-                          child: _CategoryCard(
-                            icon: Icons.headphones,
-                            label: 'Audio',
-                          ),
-                        ),
-                        GestureDetector(
-                          onTap: () =>
-                              Navigator.pushNamed(context, '/products'),
-                          child: _CategoryCard(
-                            icon: Icons.watch,
-                            label: 'Watches',
-                          ),
-                        ),
-                      ],
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -248,51 +312,98 @@ class _HomeScreenState extends State<HomeScreen> {
               // Product Grid
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                child: GridView.count(
-                  crossAxisCount: 2,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  childAspectRatio: 0.5,
-                  mainAxisSpacing: 16,
-                  crossAxisSpacing: 16,
-                  children: [
-                    GestureDetector(
-                      onTap: () =>
-                          Navigator.pushNamed(context, '/product-detail'),
-                      child: const _ProductCard(
-                        imagePath: 'assets/headphone.jpg',
-                        productName: 'Sonic Pro Max',
-                        price: '₹349',
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () =>
-                          Navigator.pushNamed(context, '/product-detail'),
-                      child: const _ProductCard(
-                        imagePath: 'assets/headphone.jpg',
-                        productName: 'Macro Watch v2',
-                        price: '₹120',
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () =>
-                          Navigator.pushNamed(context, '/product-detail'),
-                      child: const _ProductCard(
-                        imagePath: 'assets/headphone.jpg',
-                        productName: 'Clarity Pro Mini',
-                        price: '₹89',
-                      ),
-                    ),
-                    GestureDetector(
-                      onTap: () =>
-                          Navigator.pushNamed(context, '/product-detail'),
-                      child: const _ProductCard(
-                        imagePath: 'assets/headphone.jpg',
-                        productName: 'ErgaFlow Mouse',
-                        price: '₹25',
-                      ),
-                    ),
-                  ],
+                child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: _db.collection('products').snapshots(),
+                  builder: (context, productSnapshot) {
+                    if (productSnapshot.hasError) {
+                      return const SizedBox.shrink();
+                    }
+
+                    if (productSnapshot.connectionState ==
+                        ConnectionState.waiting) {
+                      return const SizedBox(
+                        height: 180,
+                        child: Center(
+                          child: CircularProgressIndicator(
+                            valueColor: AlwaysStoppedAnimation(
+                              AppColors.primary,
+                            ),
+                          ),
+                        ),
+                      );
+                    }
+
+                    final categoriesSnapshot = _db.collection('categories');
+                    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                      stream: categoriesSnapshot.snapshots(),
+                      builder: (context, categorySnapshot) {
+                        final categories =
+                            categorySnapshot.data?.docs
+                                .map(
+                                  (doc) => _CategoryRecord.fromDoc(
+                                    doc.id,
+                                    doc.data(),
+                                  ),
+                                )
+                                .toList() ??
+                            [];
+                        final categoryById = {
+                          for (final category in categories)
+                            category.id: category,
+                        };
+
+                        final featuredProducts =
+                            productSnapshot.data?.docs
+                                .map(
+                                  (doc) => _ProductRecord.fromDoc(
+                                    doc.id,
+                                    doc.data(),
+                                  ),
+                                )
+                                .where(
+                                  (product) =>
+                                      product.isActive && product.isFeatured,
+                                )
+                                .where(
+                                  (product) =>
+                                      _searchQuery.isEmpty ||
+                                      product.matches(
+                                        _searchQuery,
+                                        categoryById[product.categoryId]?.name,
+                                      ),
+                                )
+                                .toList() ??
+                            [];
+
+                        if (featuredProducts.isEmpty) {
+                          return const SizedBox.shrink();
+                        }
+
+                        return GridView.count(
+                          crossAxisCount: 2,
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          childAspectRatio: 0.5,
+                          mainAxisSpacing: 16,
+                          crossAxisSpacing: 16,
+                          children: featuredProducts.map((product) {
+                            return GestureDetector(
+                              onTap: () => Navigator.pushNamed(
+                                context,
+                                '/product-detail',
+                                arguments: product.toJson(),
+                              ),
+                              child: _ProductCard(
+                                imagePath: product.productImage,
+                                productName: product.name,
+                                price: _formatPrice(product.finalPrice),
+                              ),
+                            );
+                          }).toList(),
+                        );
+                      },
+                    );
+                  },
                 ),
               ),
               const SizedBox(height: 24),
@@ -561,36 +672,76 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-class _CategoryCard extends StatelessWidget {
-  final IconData icon;
-  final String label;
+class _HomeCategoryCard extends StatelessWidget {
+  final _CategoryRecord category;
 
-  const _CategoryCard({required this.icon, required this.label});
+  const _HomeCategoryCard({required this.category});
 
   @override
   Widget build(BuildContext context) {
-    return Column(
-      children: [
-        Container(
-          width: 60,
-          height: 60,
-          decoration: BoxDecoration(
-            color: AppColors.grey200,
-            borderRadius: BorderRadius.circular(12),
+    return SizedBox(
+      width: 76,
+      child: Column(
+        children: [
+          Container(
+            width: 60,
+            height: 60,
+            decoration: BoxDecoration(
+              color: AppColors.grey200,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: _buildCategoryImage(),
           ),
-          child: Icon(icon, size: 32, color: AppColors.primaryDark),
-        ),
-        const SizedBox(height: 8),
-        Text(
-          label,
-          style: const TextStyle(
-            fontSize: 12,
-            fontWeight: FontWeight.w500,
-            color: AppColors.black,
+          const SizedBox(height: 8),
+          Text(
+            category.name,
+            style: const TextStyle(
+              fontSize: 12,
+              fontWeight: FontWeight.w500,
+              color: AppColors.black,
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
           ),
-          textAlign: TextAlign.center,
-        ),
-      ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategoryImage() {
+    final imagePath = category.image.trim();
+    if (imagePath.isEmpty) {
+      return const Icon(
+        Icons.category_outlined,
+        size: 32,
+        color: AppColors.primaryDark,
+      );
+    }
+
+    final file = File(imagePath);
+    if (file.existsSync()) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Image.file(file, fit: BoxFit.cover, width: 60, height: 60),
+      );
+    }
+
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(12),
+      child: Image.asset(
+        imagePath,
+        fit: BoxFit.cover,
+        width: 60,
+        height: 60,
+        errorBuilder: (context, error, stackTrace) {
+          return const Icon(
+            Icons.category_outlined,
+            size: 32,
+            color: AppColors.primaryDark,
+          );
+        },
+      ),
     );
   }
 }
@@ -628,15 +779,7 @@ class _ProductCard extends StatelessWidget {
                 topRight: Radius.circular(12),
               ),
             ),
-            child: Center(
-              child: Image.asset(
-                imagePath,
-                fit: BoxFit.cover,
-                errorBuilder: (context, error, stackTrace) {
-                  return Icon(Icons.image, size: 40, color: AppColors.grey400);
-                },
-              ),
-            ),
+            child: Center(child: _buildProductImage()),
           ),
           Padding(
             padding: const EdgeInsets.all(12.0),
@@ -687,4 +830,126 @@ class _ProductCard extends StatelessWidget {
       ),
     );
   }
+
+  Widget _buildProductImage() {
+    final path = imagePath.trim();
+    if (path.isEmpty) {
+      return Icon(Icons.image, size: 40, color: AppColors.grey400);
+    }
+
+    final file = File(path);
+    if (file.existsSync()) {
+      return Image.file(file, fit: BoxFit.cover);
+    }
+
+    return Image.asset(
+      path,
+      fit: BoxFit.cover,
+      errorBuilder: (context, error, stackTrace) {
+        return Icon(Icons.image, size: 40, color: AppColors.grey400);
+      },
+    );
+  }
 }
+
+class _CategoryRecord {
+  final String id;
+  final String name;
+  final String description;
+  final String image;
+  final bool isActive;
+  final bool showOnHome;
+  final int displayOrder;
+
+  const _CategoryRecord({
+    required this.id,
+    required this.name,
+    required this.description,
+    required this.image,
+    required this.isActive,
+    required this.showOnHome,
+    required this.displayOrder,
+  });
+
+  factory _CategoryRecord.fromDoc(String id, Map<String, dynamic> data) {
+    return _CategoryRecord(
+      id: id,
+      name: data['name']?.toString() ?? '',
+      description: data['description']?.toString() ?? '',
+      image: data['image']?.toString() ?? '',
+      isActive: data['isActive'] as bool? ?? true,
+      showOnHome: data['showOnHome'] as bool? ?? false,
+      displayOrder: int.tryParse(data['displayOrder']?.toString() ?? '') ?? 0,
+    );
+  }
+
+  bool matches(String query) {
+    final text = [name, description, image, displayOrder.toString()].join(' ');
+    return text.toLowerCase().contains(query);
+  }
+}
+
+class _ProductRecord {
+  final String id;
+  final String name;
+  final String brand;
+  final String description;
+  final String productImage;
+  final int price;
+  final int finalPrice;
+  final bool isFeatured;
+  final bool isActive;
+  final String categoryId;
+
+  const _ProductRecord({
+    required this.id,
+    required this.name,
+    required this.brand,
+    required this.description,
+    required this.productImage,
+    required this.price,
+    required this.finalPrice,
+    required this.isFeatured,
+    required this.isActive,
+    required this.categoryId,
+  });
+
+  factory _ProductRecord.fromDoc(String id, Map<String, dynamic> data) {
+    return _ProductRecord(
+      id: id,
+      name: data['name']?.toString() ?? '',
+      brand: data['brand']?.toString() ?? '',
+      description: data['description']?.toString() ?? '',
+      productImage: data['productImage']?.toString() ?? '',
+      price: int.tryParse(data['price']?.toString() ?? '') ?? 0,
+      finalPrice:
+          int.tryParse(data['finalPrice']?.toString() ?? '') ??
+          (int.tryParse(data['price']?.toString() ?? '') ?? 0),
+      isFeatured: data['isFeatured'] as bool? ?? false,
+      isActive: data['isActive'] as bool? ?? true,
+      categoryId: data['categoryId']?.toString() ?? '',
+    );
+  }
+
+  bool matches(String query, String? categoryName) {
+    final text = [name, brand, description, categoryName ?? ''].join(' ');
+    return text.toLowerCase().contains(query);
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'name': name,
+      'brand': brand,
+      'description': description,
+      'productImage': productImage,
+      'price': price,
+      'finalPrice': finalPrice,
+      'isFeatured': isFeatured,
+      'isActive': isActive,
+      'categoryId': categoryId,
+    };
+  }
+}
+
+String _formatPrice(int value) => '₹$value';

@@ -7,9 +7,6 @@ import 'package:tekzo/services/app_config_service.dart';
 class PrivacyPolicyScreen extends StatelessWidget {
   const PrivacyPolicyScreen({Key? key}) : super(key: key);
 
-  final String _privacyText =
-      '''Tekzo collects information to provide better services to all our users. We collect information in the following ways:\n\n• Information you give us, such as your name, email address, and phone number when you create an account.\n\n• Device information (model, OS version).\n\n• Log information (IP address, system activity).\n\n• Location information (GPS, Wi‑Fi access points).\n\nWe use the information we collect from all of our services to provide, maintain, protect and improve them, to develop new ones, and to protect Tekzo and our users.\n\nWe work hard to protect Tekzo and our users from unauthorized access to or unauthorized alteration, disclosure or destruction of information we hold. We use industry‑standard encryption protocols (SSL/TLS) for data transmission.\n\nDepending on your location, you may have the right to access, correct, or delete your personal data. You can manage your preferences directly from the account settings in the Tekzo app.''';
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
